@@ -2,9 +2,11 @@
 (function (root) {
   const VQ = (root.VQ = root.VQ || {});
 
-  const W = 109;
+  const VILLAGE_W = 109; // عرض القرية الأصلية، والباقي صحرا وجبال شرقية
+  const W = 175;
   const H = 130; // الحي الجنوبي: التعليم والمطار ورا البوابة
-  const T = { GRASS: 0, PATH: 1, PLAZA: 2, WATER: 3, SAND: 4, FARM: 5, DIRT: 6, ASPHALT: 7 };
+  const EAST_X = 110; // بداية الإقليم الشرقي: صحرا وجبال فيها المناجم
+  const T = { GRASS: 0, PATH: 1, PLAZA: 2, WATER: 3, SAND: 4, FARM: 5, DIRT: 6, ASPHALT: 7, ROCK: 8 };
   VQ.T = T;
   VQ.TILE = 16;
 
@@ -66,6 +68,12 @@
     s_books: [2, 1], rack: [2, 1], mannequin: [1, 1], arcade: [1, 1], carrom: [2, 2], cafetable: [1, 1],
     desk: [1, 1], teacher: [2, 1], clinicbed: [1, 2], medcab: [2, 1], mayordesk: [3, 1], flag: [1, 1],
     longtable: [4, 2], bench: [2, 1], crate: [1, 1], dallah: [1, 1], pot: [1, 1],
+    // صالة المطار
+    glass: [1, 1], checkin: [3, 1], xray: [3, 1], detector: [1, 1], passbooth: [2, 2], gateseats: [4, 1], gatedesk: [2, 1],
+    carousel: [6, 2], infodesk: [3, 1], exchbooth: [2, 1], atm: [1, 1], df_perfume: [2, 1], df_choc: [2, 1], df_gold: [2, 1],
+    foodcounter: [4, 1], palm_in: [1, 1], trolley: [1, 1],
+    // هيئة التعدين
+    maptable: [3, 2], samples: [2, 1], ore: [1, 1],
   };
   VQ.FURN = FURN;
 
@@ -233,6 +241,97 @@
     });
   }
 
+  // هيئة التعدين: طاولة خرايط، عينات صخور، وصناديق خام
+  function miningInterior(id) {
+    return makeInterior(id, 15, 10, {
+      floor: 'clay',
+      wall: '#e8d8c0',
+      items: [
+        { s: 'mayordesk', x: 6, y: 3 }, { s: 'flag', x: 5, y: 2 }, { s: 'flag', x: 9, y: 2 },
+        { s: 'samples', x: 1, y: 2 }, { s: 'samples', x: 12, y: 2 }, { s: 'maptable', x: 2, y: 5 }, { s: 'maptable', x: 10, y: 5 },
+        { s: 'ore', x: 1, y: 8 }, { s: 'ore', x: 2, y: 8 }, { s: 'ore', x: 13, y: 8 }, { s: 'crate', x: 12, y: 8 }, { s: 'plant', x: 11, y: 2 },
+      ],
+      walls: [{ s: 'calligraphy', x: 6, w: 3 }, { s: 'frame', x: 3, w: 2 }, { s: 'window', x: 10, w: 2 }],
+      anchors: { work: [7, 2], counter: { x: 6, y: 3, w: 3 } },
+    });
+  }
+
+  // صالة المطار الكبيرة: من الباب للكاونترات، بعدها التفتيش، بعدها الجوازات، وفوق صالة المغادرة والبوابات
+  function airportInterior(id) {
+    const w = 47;
+    const h = 29;
+    const items = [];
+    const add = (s, x, y, extra) => items.push(Object.assign({ s, x, y }, extra || {}));
+    // حاجز التفتيش الأمني بعرض الصالة، وفيه خمس فتحات بالنص
+    for (let x = 1; x < w - 1; x++) if (x < 21 || x > 25) add('glass', x, 16);
+    for (const x of [21, 23, 25]) add('detector', x, 16, { soft: true });
+    add('xray', 17, 17); add('xray', 27, 17);
+    // الجوازات: كبائن بينها ممرات، والحاجز يكمل للجدران
+    for (let x = 1; x < w - 1; x++) if (x < 14 || x > 32) add('glass', x, 11);
+    for (const x of [14, 18, 25, 29]) add('passbooth', x, 10);
+    // الأسواق الحرة على اليسار والمقهى على اليمين، وبينهم البوابات
+    for (let y = 2; y <= 9; y++) if (y !== 7 && y !== 8) { add('glass', 13, y); add('glass', 33, y); }
+    add('df_perfume', 1, 2); add('df_choc', 4, 2); add('df_gold', 7, 2); add('df_perfume', 10, 2);
+    add('df_choc', 2, 5); add('df_gold', 6, 5); add('counter', 8, 8); add('palm_in', 1, 9);
+    add('gatedesk', 15, 2); add('gatedesk', 30, 2);
+    for (const y of [5, 8]) for (const x of [15, 20, 25]) add('gateseats', x, y);
+    add('counter', 35, 3); add('dallah', 34, 2);
+    for (const [x, y] of [[40, 3], [43, 3], [36, 6], [39, 6], [42, 6], [44, 8], [37, 9]]) add('cafetable', x, y);
+    add('palm_in', 45, 2);
+    // الجهة البرية: المصلى، المطاعم، الكاونترات، الاستعلامات، الصرافة، وسير الحقائب
+    add('foodcounter', 37, 13); add('cafetable', 38, 15); add('cafetable', 41, 15); add('cafetable', 44, 14);
+    for (const x of [3, 7, 11, 33, 37, 41]) add('checkin', x, 20);
+    add('infodesk', 17, 24); add('exchbooth', 2, 24); add('atm', 5, 24); add('atm', 6, 24);
+    add('carousel', 37, 24);
+    add('bench', 9, 26); add('bench', 29, 26); add('palm_in', 1, 27); add('palm_in', 45, 27);
+    add('trolley', 14, 26); add('trolley', 15, 26); add('trolley', 32, 26);
+    add('plant', 20, 27); add('plant', 26, 27);
+    const flat = [
+      { s: 'carpet', x: 2, y: 13, w: 9, h: 2, hue: 3 }, // المصلى
+      { s: 'runner', x: 21, y: 18, w: 5, h: 9 }, // سجادة الطريق من الباب للتفتيش
+      { s: 'runner', x: 19, y: 3, w: 1, h: 7 },
+      { s: 'rope', x: 3, y: 21, w: 11, h: 1 }, { s: 'rope', x: 33, y: 21, w: 11, h: 1 },
+      { s: 'label', x: 4, y: 12, w: 5, text: 'المصلى' },
+      { s: 'label', x: 37, y: 12, w: 6, text: 'المطاعم' },
+      { s: 'label', x: 5, y: 22, w: 6, text: 'الكاونترات' },
+      { s: 'label', x: 35, y: 22, w: 6, text: 'الكاونترات' },
+      { s: 'label', x: 15, y: 18, w: 4, text: 'التفتيش' },
+      { s: 'label', x: 20, y: 13, w: 7, text: 'الجوازات' },
+      { s: 'label', x: 3, y: 7, w: 7, text: 'السوق الحرة' },
+      { s: 'label', x: 36, y: 10, w: 7, text: 'المقهى' },
+      { s: 'label', x: 37, y: 26, w: 6, text: 'استلام الحقائب' },
+      { s: 'label', x: 2, y: 26, w: 5, text: 'الصرافة' },
+    ];
+    const walls = [
+      { s: 'bigwindow', x: 14, w: 6 }, { s: 'fids', x: 20, w: 7 }, { s: 'bigwindow', x: 27, w: 6 },
+      { s: 'gatesign', x: 15, w: 2, text: '١' }, { s: 'gatesign', x: 30, w: 2, text: '٢' },
+      { s: 'menu', x: 39, w: 2 }, { s: 'window', x: 42, w: 2 }, { s: 'calligraphy', x: 3, w: 3 }, { s: 'frame', x: 8, w: 2 },
+    ];
+    return makeInterior(id, w, h, {
+      floor: 'airport',
+      wall: '#dfe8f0',
+      items,
+      flat,
+      walls,
+      anchors: {
+        work: [23, 23],
+        counter: { x: 17, y: 24, w: 3 },
+        // كل وظيفة لها مكانها في الصالة
+        jobs: {
+          'مدير المطار': [[23, 23]], 'مراقب جوي': [[22, 3]],
+          'موظف جوازات': [[15, 9], [19, 9], [26, 9], [30, 9]], 'عامل أرضي': [[40, 23], [36, 26]],
+          'مضيف طيران': [[16, 3], [31, 3]], 'موظف كاونتر': [[4, 19], [8, 19], [12, 19], [34, 19], [38, 19], [42, 19]],
+          'موظف تفتيش أمني': [[22, 17], [24, 17]], 'باريستا المطار': [[36, 2]], 'بائع الأسواق الحرة': [[9, 7]],
+          'موظف استعلامات': [[18, 23]], 'طبّاخ المطار': [[39, 12]],
+        },
+        // المسافرين من أهل البلد يقعدون عند البوابات
+        travel: [[15, 4], [16, 4], [17, 4], [20, 4], [21, 4], [25, 4], [26, 4], [27, 4], [16, 7], [21, 7], [22, 7], [26, 7]],
+        // طريق المسافر: الكاونتر، التفتيش، الجوازات، البوابة
+        route: { checkin: [[4, 21], [8, 21], [12, 21], [34, 21], [38, 21], [42, 21]], security: [[21, 16], [23, 16], [25, 16]], passport: [[16, 11], [17, 11], [20, 11], [24, 11], [27, 11], [28, 11]], gates: [[15, 4], [17, 4], [20, 4], [22, 4], [26, 4], [28, 4], [16, 7], [21, 7], [27, 7], [19, 9], [24, 9]], carousel: [[36, 23], [39, 23], [42, 23], [43, 25]] },
+      },
+    });
+  }
+
   function palaceInterior(id) {
     return makeInterior(id, 19, 13, {
       floor: 'marble',
@@ -300,6 +399,66 @@
         if (d < 0.72) ground[idx(x, y)] = T.WATER;
         else if (d < 1.05) ground[idx(x, y)] = T.SAND;
       }
+    }
+
+    // ---- الإقليم الشرقي: صحرا وجبال، والمناجم مدفونة فيها ----
+    const noise = (x, y, scale, seed) => {
+      const h = (ix, iy) => {
+        let t = Math.imul(ix * 374761393 + iy * 668265263 + seed * 2147483647, 1274126177);
+        t = Math.imul(t ^ (t >>> 13), 1103515245);
+        return ((t ^ (t >>> 16)) >>> 0) / 4294967296;
+      };
+      const fx = x / scale;
+      const fy = y / scale;
+      const ix = Math.floor(fx);
+      const iy = Math.floor(fy);
+      const tx = fx - ix;
+      const ty = fy - iy;
+      const sx = tx * tx * (3 - 2 * tx);
+      const sy = ty * ty * (3 - 2 * ty);
+      const a = h(ix, iy);
+      const b = h(ix + 1, iy);
+      const c = h(ix, iy + 1);
+      const d = h(ix + 1, iy + 1);
+      return (a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy;
+    };
+    for (let y = 0; y < H; y++) {
+      for (let x = VILLAGE_W; x < W; x++) {
+        const m = noise(x, y, 9, 11) * 0.65 + noise(x, y, 4, 23) * 0.35;
+        const east = (x - EAST_X) / (W - EAST_X);
+        const edge = x >= W - 3 || y < 2 || y > H - 3;
+        ground[idx(x, y)] = edge || m + east * 0.22 > 0.66 ? T.ROCK : T.SAND;
+      }
+    }
+    // الطرق الترابية: خط رئيسي من القرية للشرق، وخطين من الشمال للجنوب
+    const dirt = (x0, y0, x1, y1) => {
+      for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) if (inside(x, y)) ground[idx(x, y)] = T.DIRT;
+    };
+    const clearAround = (x0, y0, x1, y1) => {
+      for (let y = y0 - 1; y <= y1 + 1; y++) for (let x = x0 - 1; x <= x1 + 1; x++) if (inside(x, y) && ground[idx(x, y)] === T.ROCK && x < W - 3) ground[idx(x, y)] = T.SAND;
+    };
+    const tracks = [[117, 42, 170, 43], [140, 8, 141, 122], [162, 24, 163, 114]];
+    // المناجم: كل واحد له معدنه وساحة قدامه وطريق فرعي يوصله
+    const MINE_DEFS = [
+      { id: 'mine1', mineral: 'salt', cx: 124, cy: 56, spur: [124, 44, 125, 55], place: 'منجم الملح' },
+      { id: 'mine2', mineral: 'marble', cx: 130, cy: 18, spur: [130, 22, 131, 41], place: 'مقلع الرخام' },
+      { id: 'mine3', mineral: 'phosphate', cx: 152, cy: 66, spur: [142, 68, 148, 69], place: 'منجم الفوسفات' },
+      { id: 'mine4', mineral: 'copper', cx: 152, cy: 12, spur: [142, 14, 148, 15], place: 'منجم النحاس' },
+      { id: 'mine5', mineral: 'iron', cx: 150, cy: 100, spur: [142, 102, 146, 103], place: 'منجم الحديد' },
+      { id: 'mine6', mineral: 'gold', cx: 168, cy: 104, spur: [164, 106, 164, 107], place: 'منجم الذهب' },
+    ];
+    for (const t of tracks) { clearAround(...t); dirt(...t); }
+    for (const m of MINE_DEFS) { clearAround(...m.spur); dirt(...m.spur); }
+    fill(VILLAGE_W, 42, 116, 43, T.PATH); // الشارع الرئيسي يكمل لهيئة التعدين
+    clearAround(VILLAGE_W, 31, 124, 44);
+    const mineSites = [];
+    for (const m of MINE_DEFS) {
+      const pad = { x0: m.cx - 3, y0: m.cy, x1: m.cx + 3, y1: m.cy + 3 };
+      clearAround(pad.x0, pad.y0, pad.x1, pad.y1);
+      dirt(pad.x0, pad.y0, pad.x1, pad.y1);
+      // وجه الجبل فوق الساحة، والمدخل في نصه
+      for (let y = pad.y0 - 3; y < pad.y0; y++) for (let x = pad.x0 - 1; x <= pad.x1 + 1; x++) ground[idx(x, y)] = T.ROCK;
+      mineSites.push(Object.assign({}, m, { pad, ex: m.cx, ey: pad.y0 - 1 }));
     }
 
     const buildings = [];
@@ -415,7 +574,7 @@
     uni.interior = schoolInterior('university');
     plotFence(uni);
     const airport = addB({ id: 'airport', kind: 'branch', icon: 'airport', name: 'المطار', x: 44, y: 101, w: 21, h: 10, wallRows: 4, seed: 51, doors: [53, 54, 55] });
-    airport.interior = officeInterior('airport', '#dde8f2');
+    airport.interior = airportInterior('airport');
     airport.front = { x: 54, y: 111 };
     plotFence(airport);
     // المصرف المركزي في الجنوب الغربي
@@ -436,6 +595,10 @@
     oil.interior = officeInterior('oil', '#e8e0d0');
     plotFence(oil);
     fill(98, 101, 105, 113, T.DIRT);
+    // هيئة التعدين على حدود الصحرا، بوابة الإقليم الشرقي
+    const mining = addB({ id: 'mining', kind: 'branch', icon: 'mining', name: 'هيئة التعدين', x: 111, y: 35, w: 11, h: 7, wallRows: 3, seed: 61 });
+    mining.interior = miningInterior('mining');
+    plotFence(mining);
 
     // ربط أبواب المحلات بالطريق
     for (const b of buildings) {
@@ -584,21 +747,21 @@
       if (!inside(x, y) || !free(x, y)) return;
       put(R() < 0.55 ? 'palm' : 'sidr', x, y);
     };
-    for (let x = 0; x < W; x += 2) {
+    for (let x = 0; x < VILLAGE_W; x += 2) {
       edgeTree(x, H - 1 - (x % 4 === 0 ? 0 : 1));
       edgeTree(x + (x % 4 === 0 ? 1 : 0), H - 3 - (x % 6 === 0 ? 0 : 1));
       if (x < 36 || x > 72) edgeTree(x, 1 + (x % 4 === 0 ? 0 : 1));
     }
     for (let y = 0; y < H; y += 2) {
       edgeTree(0, y);
-      edgeTree(W - 1, y);
+      edgeTree(VILLAGE_W - 1, y);
       edgeTree(2 + (y % 4 === 0 ? 1 : 0), y);
-      edgeTree(W - 3 - (y % 4 === 0 ? 1 : 0), y);
+      edgeTree(VILLAGE_W - 3 - (y % 4 === 0 ? 1 : 0), y);
     }
 
     // أشجار ونباتات في الفراغات
     for (let i = 0; i < Math.round(2400 * H / 86); i++) {
-      const x = Math.floor(R() * W);
+      const x = Math.floor(R() * VILLAGE_W);
       const y = Math.floor(R() * H);
       if (!free(x, y)) continue;
       // خلها بعيدة عن حواف الطرق شوي
@@ -639,11 +802,37 @@
     places.lake = { id: 'lake', name: 'البحيرة', kind: 'lake', front: { x: 54, y: 10 }, indoor: false, tiles: lakeTiles };
     places.cemetery = { id: 'cemetery', name: 'المقبرة', kind: 'cemetery', front: { x: 100, y: 27 }, indoor: false, tiles: [[100, 25], [100, 28]] };
 
-    // الماي ما ينمشي فيه
-    for (let i = 0; i < W * H; i++) if (ground[i] === T.WATER) solid[i] = 1;
+    // نباتات الصحرا وصخورها، بمولد مستقل عشان ما تتغير القرية
+    const D = rng(4242);
+    const sandFree = (x, y) => inside(x, y) && !solid[idx(x, y)] && !reserved[idx(x, y)] && ground[idx(x, y)] === T.SAND;
+    for (let i = 0; i < 900; i++) {
+      const x = VILLAGE_W + Math.floor(D() * (W - VILLAGE_W));
+      const y = Math.floor(D() * H);
+      if (!sandFree(x, y)) continue;
+      let nearTrack = false;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (inside(x + dx, y + dy) && ground[idx(x + dx, y + dy)] !== T.SAND && ground[idx(x + dx, y + dy)] !== T.ROCK) nearTrack = true;
+      if (nearTrack) continue;
+      const roll = D();
+      if (roll < 0.35) put('dshrub', x, y, false);
+      else if (roll < 0.5) put('rock', x, y);
+      else if (roll < 0.56) put('ghaf', x, y);
+    }
+
+    // المناجم: أماكن برّا، يروح لها الطاقم لما ينفتح المنجم
+    for (const m of mineSites) {
+      const tiles = [];
+      for (let y = m.pad.y0; y <= m.pad.y1; y++) for (let x = m.pad.x0; x <= m.pad.x1; x++) if (!(x === m.ex && y === m.pad.y0)) tiles.push([x, y]);
+      places[m.id] = { id: m.id, name: m.place, kind: 'mine', front: { x: m.cx, y: m.pad.y1 }, indoor: false, tiles, mine: true };
+    }
+    // أطراف الاستكشاف: المحاكاة تحدّث مربعاتها كل ما انكشفت أرض جديدة
+    places.frontier = { id: 'frontier', name: 'أطراف الاستكشاف', kind: 'frontier', front: { x: 118, y: 43 }, indoor: false, tiles: [] };
+
+    // الماي والجبال ما ينمشي فيها
+    for (let i = 0; i < W * H; i++) if (ground[i] === T.WATER || ground[i] === T.ROCK) solid[i] = 1;
 
     return {
-      W, H, ground, solid, buildings, props, flatProps, lotWall, places, graveSlots, stallSlots,
+      W, H, ground, solid, buildings, props, flatProps, lotWall, places, graveSlots, stallSlots, mineSites,
+      east: { x0: EAST_X, chunk: 8, cols: Math.ceil((W - EAST_X) / 8), rows: Math.ceil(H / 8), villageW: VILLAGE_W },
       runway: { x0: 8, x1: 100, y0: 117, y1: 121 },
       apron: { x: 70, y: 113 },
       pumps: [[99, 103], [103, 103], [99, 108], [103, 108], [101, 112]],

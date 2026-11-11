@@ -82,6 +82,7 @@
     const pw = W * TS;
     const ph = H * TS;
     const { c, g } = mk(pw, ph);
+    const desertX = (world.east ? world.east.villageW : W) * TS;
     const img = g.createImageData(pw, ph);
     const d = img.data;
     const kindAt = (px, py) => {
@@ -95,11 +96,11 @@
         const raw = kindAt(x, y);
         let kind = raw;
         // حدود غير منتظمة، ما عدا الساحة المرصوفة
-        if (raw !== T.PLAZA && raw !== T.ASPHALT) {
+        if (raw !== T.PLAZA && raw !== T.ASPHALT && raw !== T.ROCK) {
           const jx = Math.floor(hash(x >> 1, (y >> 1) + 11) * 5) - 2;
           const jy = Math.floor(hash((x >> 1) + 5, y >> 1) * 5) - 2;
           const k2 = kindAt(x + jx, y + jy);
-          if (k2 !== T.PLAZA && k2 !== T.ASPHALT) kind = k2;
+          if (k2 !== T.PLAZA && k2 !== T.ASPHALT && k2 !== T.ROCK) kind = k2;
         }
         const dither = BAYER[(y & 3) * 4 + (x & 3)] / 16;
         let col;
@@ -114,6 +115,21 @@
         } else if (kind === T.SAND) {
           const n = smooth(x, y, 10, 15) + (dither - 0.5) * 0.2;
           col = P.sand[n < 0.42 ? 0 : n < 0.62 ? 1 : 2];
+          // تموجات الكثبان في الصحرا الشرقية
+          if (x >= desertX && (x + Math.floor(smooth(x, y, 24, 7) * 30) + (y >> 1)) % 13 === 0) col = [col[0] - 16, col[1] - 18, col[2] - 16];
+        } else if (kind === T.ROCK) {
+          // جبال: سطح فاتح، وحافة مضيئة فوق، وجرف غامق تحت فيه طبقات
+          const n = smooth(x, y, 7, 41) * 0.7 + smooth(x, y, 3, 43) * 0.3 + (dither - 0.5) * 0.16;
+          col = n < 0.4 ? [140, 108, 86] : n < 0.58 ? [158, 124, 98] : [176, 142, 112];
+          const up = kindAt(x, y - 3);
+          const down4 = kindAt(x, y + 4);
+          const down9 = kindAt(x, y + 9);
+          if (up !== T.ROCK) col = [204, 172, 136];
+          if (down9 !== T.ROCK) {
+            col = ((y + (x >> 3)) % 5 === 0) ? [92, 66, 52] : (hash(x >> 2, y) < 0.5 ? [118, 88, 68] : [108, 80, 62]);
+            if (down4 !== T.ROCK) col = [col[0] - 18, col[1] - 16, col[2] - 12];
+          }
+          if (kindAt(x, y + 1) !== T.ROCK) col = [58, 40, 34];
         } else if (kind === T.WATER) {
           const near = kindAt(x + 2, y) !== T.WATER || kindAt(x - 2, y) !== T.WATER || kindAt(x, y + 2) !== T.WATER || kindAt(x, y - 2) !== T.WATER;
           const n = smooth(x, y, 18, 21) + (dither - 0.5) * 0.2;
@@ -303,6 +319,16 @@
     OUTDOOR.rock = [simple(16, 12, 8, 11, (g) => {
       disc(g, 8, 7, 7, 4, OUT); disc(g, 8, 6, 6, 4, '#9c9384'); disc(g, 6, 5, 3, 2, '#c4bcab'); R(g, 10, 8, 3, 1, '#6e665a');
     })];
+    // نباتات الصحرا: عرفج وغاف
+    OUTDOOR.dshrub = [0, 1].map((v) => simple(16, 12, 8, 11, (g) => {
+      disc(g, 8, 7, 7, 4, OUT); disc(g, 8, 6, 6, 4, v ? '#8a8a4a' : '#9a9452'); disc(g, 6, 5, 3, 2, v ? '#b4ae6a' : '#c0b874');
+      for (const [x, y] of [[3, 7], [7, 4], [11, 6], [9, 8]]) R(g, x, y, 1, 1, '#5e5a30');
+    }));
+    OUTDOOR.ghaf = [simple(40, 44, 20, 43, (g) => {
+      R(g, 18, 26, 5, 17, OUT); R(g, 19, 26, 3, 17, '#7a5a3a'); R(g, 15, 30, 4, 2, '#7a5a3a'); R(g, 22, 28, 5, 2, '#7a5a3a');
+      disc(g, 20, 16, 19, 13, '#2f4a2a'); disc(g, 20, 14, 18, 12, '#5a7a3e'); disc(g, 14, 10, 9, 6, '#7a9a52'); disc(g, 27, 12, 7, 5, '#6a8a48');
+      for (let i = 0; i < 26; i++) R(g, 4 + Math.floor(hash(i, 3) * 32), 4 + Math.floor(hash(3, i) * 20), 1, 1, '#9ab868');
+    })];
     OUTDOOR.flowers = [0, 1, 2].map((v) => simple(16, 14, 8, 13, (g) => {
       const cols = [['#e8506a', '#f6e27a'], ['#f6f0e0', '#f0c040'], ['#b66ed6', '#f6e27a']][v];
       for (const [x, y] of [[3, 5], [9, 3], [12, 8], [6, 9]]) {
@@ -437,6 +463,7 @@
     exchange(g, x, y) { R(g, x, y + 11, 13, 1, '#2b2b3f'); R(g, x + 1, y + 8, 2, 3, '#2f9a5a'); R(g, x + 4, y + 5, 2, 6, '#2f9a5a'); R(g, x + 7, y + 7, 2, 4, '#d03a3a'); R(g, x + 10, y + 2, 2, 9, '#2f9a5a'); for (let i = 0; i < 4; i++) R(g, x + 1 + i * 3, y + 7 - i * 2, 3, 1, '#a87c1e'); },
     central(g, x, y) { R(g, x + 1, y + 4, 11, 1, '#a87c1e'); R(g, x + 3, y + 1, 7, 3, '#a87c1e'); for (const dx of [2, 5, 8, 10]) R(g, x + dx, y + 5, 1, 5, '#a87c1e'); R(g, x + 1, y + 10, 11, 2, '#a87c1e'); disc(g, x + 6, y + 2, 1, 1, '#f0cc50'); },
     oil(g, x, y) { disc(g, x + 6, y + 8, 5, 5, '#1b1b2b'); R(g, x + 5, y + 1, 3, 4, '#1b1b2b'); R(g, x + 6, y + 2, 1, 2, '#1b1b2b'); R(g, x + 4, y + 6, 2, 2, '#6b6b7c'); },
+    mining(g, x, y) { R(g, x + 1, y + 2, 11, 3, '#6b6b7c'); R(g, x, y + 3, 2, 2, '#6b6b7c'); R(g, x + 11, y + 3, 2, 3, '#6b6b7c'); R(g, x + 5, y + 4, 3, 9, '#8a5a34'); R(g, x + 6, y + 4, 1, 9, '#b8845a'); disc(g, x + 10, y + 11, 2, 1, '#f0cc50'); },
     airport(g, x, y) { R(g, x + 5, y, 3, 13, '#2b4f8a'); R(g, x, y + 5, 13, 3, '#2b4f8a'); R(g, x + 3, y + 10, 7, 2, '#2b4f8a'); R(g, x + 6, y + 1, 1, 10, '#6cc4e4'); },
     // محلات السجل التجاري
     perfume(g, x, y) { R(g, x + 5, y, 3, 3, '#a87c1e'); R(g, x + 4, y + 3, 5, 1, OUT); R(g, x + 2, y + 4, 9, 8, '#7a3a6b'); R(g, x + 3, y + 5, 7, 6, '#c86aa8'); R(g, x + 4, y + 6, 2, 3, '#f4d8ea'); },
@@ -568,6 +595,8 @@
       roofDeco(g, seed % 2 ? pw - 40 : 34, top + 16, 28, 14, seed, t);
     } else if (b.kind === 'hall' || b.kind === 'palace') {
       drawHallFront(g, b, t, wallY, wallH, top, pw, windows);
+    } else if (b.kind === 'branch' && b.icon === 'airport') {
+      drawTerminal(g, b, t, wallY, wallH, top, pw);
     } else if (b.kind === 'branch') {
       doorAt(g, doorPx + 1, wallY + 20, 14, 27, '#2b5f9a');
       for (const wx of [14, 42, pw - 56, pw - 28]) windowAt(g, wx, wallY + 14, 12, 17, '#2b5f9a', windows);
@@ -638,6 +667,46 @@
       if (seed % 2) windTower(g, 8, top + 2 - 12, t);
     }
     return { c, windows, extra };
+  }
+
+  // واجهة المطار: زجاج أزرق، مظلة للسيارات، برج مراقبة، ولوحة كبيرة
+  function drawTerminal(g, b, t, wallY, wallH, top, pw) {
+    const fh = wallY + wallH;
+    // السطح: معدن فاتح بخطوط
+    R(g, 0, top, pw, wallY - top + 4, OUT);
+    R(g, 1, top + 1, pw - 2, wallY - top + 2, '#dfe6ec');
+    for (let x = 4; x < pw - 4; x += 12) R(g, x, top + 3, 2, wallY - top - 2, '#c4ced8');
+    R(g, 1, top + 1, pw - 2, 3, '#ffffff');
+    // برج المراقبة على اليمين
+    const tx = pw - 46;
+    R(g, tx + 12, top - 22, 14, wallY - top + 24, OUT); R(g, tx + 13, top - 21, 12, wallY - top + 22, '#e8eef2'); R(g, tx + 22, top - 21, 3, wallY - top + 22, '#c4ced8');
+    R(g, tx + 4, top - 38, 30, 18, OUT); R(g, tx + 5, top - 37, 28, 16, '#2b4f6a');
+    for (let i = 0; i < 6; i++) R(g, tx + 6 + i * 5, top - 35, 3, 12, '#7cc8e8');
+    R(g, tx + 2, top - 41, 34, 4, OUT); R(g, tx + 3, top - 40, 32, 2, '#f4f2ea');
+    R(g, tx + 18, top - 50, 2, 9, '#5e5e6c'); R(g, tx + 17, top - 52, 4, 3, '#d9483f');
+    // الجدار الزجاجي
+    R(g, 0, wallY, pw, wallH, OUT);
+    for (let x = 1; x < pw - 1; x++) {
+      const col = (x % 14 === 0) ? '#c4ced8' : (x % 14 < 3 ? '#9ad4f0' : '#4f8fb8');
+      R(g, x, wallY + 1, 1, wallH - 3, col);
+    }
+    for (let y = wallY + 14; y < fh - 4; y += 16) R(g, 1, y, pw - 2, 1, '#c4ced8');
+    for (let i = 0; i < pw; i += 7) R(g, i, wallY + 3 + Math.floor((i % 21) / 3), 3, 1, 'rgba(255,255,255,.55)');
+    R(g, 0, fh - 3, pw, 3, '#8a949c');
+    // المظلة الكبيرة فوق المدخل
+    const cx = pw / 2;
+    R(g, cx - 70, wallY - 4, 140, 10, OUT); R(g, cx - 69, wallY - 3, 138, 7, '#f4f2ea'); R(g, cx - 69, wallY + 2, 138, 2, '#c4ced8');
+    for (const x of [cx - 64, cx - 30, cx + 28, cx + 62]) { R(g, x, wallY + 6, 3, wallH - 9, OUT); R(g, x + 1, wallY + 6, 1, wallH - 9, '#dfe6ec'); }
+    // الأبواب الأوتوماتيكية
+    R(g, cx - 26, fh - 34, 52, 31, OUT); R(g, cx - 25, fh - 33, 50, 30, '#2b4f6a');
+    for (const x of [cx - 24, cx - 12, cx + 1, cx + 13]) { R(g, x, fh - 32, 11, 28, '#7cc8e8'); R(g, x + 1, fh - 31, 2, 26, '#c8ecf8'); }
+    // اللوحة: أيقونة الطيارة وخط ذهبي
+    R(g, cx - 40, wallY - 22, 80, 18, OUT); R(g, cx - 39, wallY - 21, 78, 16, '#1d2a5a'); R(g, cx - 39, wallY - 7, 78, 2, '#f0cc50');
+    ICONS.airport(g, cx - 34, wallY - 20);
+    for (let i = 0; i < 6; i++) R(g, cx - 14 + i * 8, wallY - 16, 5, 2, '#f4f2ea');
+    for (let i = 0; i < 4; i++) R(g, cx - 10 + i * 9, wallY - 12, 6, 2, '#f0cc50');
+    // أعلام على السطح
+    for (const x of [10, 40]) { R(g, x, top - 14, 2, 18, '#5e5e6c'); R(g, x + 2, top - 14, 12, 8, '#3f7a48'); R(g, x + 2, top - 11, 12, 2, '#f6f0e0'); }
   }
 
   function drawHallFront(g, b, t, wallY, wallH, top, pw) {
@@ -749,12 +818,62 @@
     longtable(g) { box(g, 0, 3, 64, 29, '#946c44', '#6b4a2b', 5); R(g, 2, 5, 60, 2, '#b8905e'); for (let i = 0; i < 4; i++) { R(g, 6 + i * 14, 12, 8, 5, '#f4f0e4'); R(g, 8 + i * 14, 20, 3, 4, '#3a93c6'); } },
     bench(g) { box(g, 1, 4, 30, 11, '#b98c5a', woodD, 3); R(g, 2, 5, 28, 1, '#d0a878'); },
     crate(g) { box(g, 1, 1, 14, 14, '#c49a64', '#a87c4e', 6); R(g, 3, 3, 3, 3, '#e8483f'); R(g, 8, 3, 3, 3, '#e8a93a'); R(g, 5, 5, 3, 2, '#7ac050'); },
+    // ---- صالة المطار ----
+    glass(g) { R(g, 0, -10, 16, 26, OUT); R(g, 1, -9, 14, 22, 'rgba(150,210,240,.55)'); R(g, 2, -8, 2, 18, 'rgba(255,255,255,.6)'); R(g, 0, 12, 16, 4, '#8a949c'); R(g, 0, -10, 16, 2, '#c4ced8'); },
+    checkin(g) { box(g, 0, 2, 32, 14, '#e8eef2', '#9aa8b4', 7); R(g, 1, 3, 30, 1, '#ffffff'); R(g, 3, -6, 10, 8, OUT); R(g, 4, -5, 8, 6, '#2b4f6a'); R(g, 5, -4, 6, 1, '#7cc8e8'); R(g, 33, 4, 14, 10, OUT); R(g, 34, 5, 12, 8, '#3a3a44'); for (let i = 0; i < 4; i++) R(g, 35 + i * 3, 6, 1, 6, '#5e5e6c'); R(g, 36, 1, 8, 5, '#d9483f'); R(g, 36, 1, 8, 1, '#f08a7a'); R(g, 20, -12, 10, 8, OUT); R(g, 21, -11, 8, 6, '#1d2a5a'); R(g, 22, -9, 6, 1, '#f0cc50'); },
+    xray(g) { box(g, 0, 4, 48, 12, '#5e5e6c', '#3a3a44', 6); R(g, 14, -6, 20, 14, OUT); R(g, 15, -5, 18, 12, '#8a949c'); R(g, 17, 1, 14, 6, '#1b1b2b'); for (let i = 0; i < 12; i++) R(g, 1 + i * 4, 6, 2, 1, '#8a8a98'); R(g, 4, 1, 8, 5, '#2f8f9a'); R(g, 36, 2, 7, 4, '#d88a36'); R(g, 20, -3, 8, 2, '#7cd67c'); },
+    detector(g) { R(g, 0, -14, 3, 30, OUT); R(g, 13, -14, 3, 30, OUT); R(g, 1, -13, 1, 28, '#c4ced8'); R(g, 14, -13, 1, 28, '#c4ced8'); R(g, 0, -16, 16, 4, OUT); R(g, 1, -15, 14, 2, '#c4ced8'); R(g, 6, -15, 4, 2, '#7cd67c'); },
+    passbooth(g) { box(g, 0, -6, 32, 38, '#e8eef2', '#9aa8b4', 22); R(g, 2, -4, 28, 14, OUT); R(g, 3, -3, 26, 12, 'rgba(150,210,240,.8)'); R(g, 4, -2, 3, 10, 'rgba(255,255,255,.7)'); R(g, 4, -10, 24, 6, '#1d2a5a'); R(g, 6, -8, 20, 2, '#f0cc50'); R(g, 10, 12, 12, 3, '#c49a64'); },
+    gateseats(g) { for (let i = 0; i < 4; i++) { R(g, i * 16 + 1, 2, 14, 13, OUT); R(g, i * 16 + 2, 3, 12, 6, '#2b4f8a'); R(g, i * 16 + 2, 9, 12, 4, '#3f6ab0'); R(g, i * 16 + 2, 3, 12, 1, '#5a86c8'); } R(g, 0, 13, 64, 2, '#5e5e6c'); },
+    gatedesk(g) { box(g, 1, 2, 30, 14, '#e8eef2', '#9aa8b4', 7); R(g, 4, -6, 10, 8, OUT); R(g, 5, -5, 8, 6, '#2b4f6a'); R(g, 18, 3, 10, 2, '#f0cc50'); },
+    carousel(g) { R(g, 0, 0, 96, 32, OUT); R(g, 2, 2, 92, 28, '#5e5e6c'); R(g, 10, 10, 76, 12, '#8a949c'); R(g, 12, 12, 72, 8, '#c4ced8'); for (let i = 0; i < 22; i++) R(g, 4 + i * 4, 4, 2, 4, '#3a3a44'); for (let i = 0; i < 22; i++) R(g, 4 + i * 4, 24, 2, 4, '#3a3a44'); for (const [x, y, c] of [[8, 3, '#d9483f'], [30, 3, '#2b6fc8'], [56, 23, '#3f7a48'], [76, 3, '#e0b64f'], [84, 12, '#8e62c9'], [20, 23, '#d88a36']]) { R(g, x, y, 9, 6, OUT); R(g, x + 1, y + 1, 7, 4, c); } },
+    infodesk(g) { box(g, 0, 2, 48, 14, '#2b4f8a', '#1d2a5a', 7); R(g, 1, 3, 46, 1, '#5a86c8'); disc(g, 24, 9, 4, 4, '#f4f2ea'); R(g, 23, 6, 2, 1, '#2b4f8a'); R(g, 23, 8, 2, 4, '#2b4f8a'); R(g, 6, -6, 10, 8, OUT); R(g, 7, -5, 8, 6, '#2b4f6a'); },
+    exchbooth(g) { box(g, 1, -8, 30, 24, '#e0b64f', '#a87c1e', 16); R(g, 4, -5, 24, 9, '#1d2a5a'); for (let i = 0; i < 3; i++) R(g, 6, -3 + i * 3, 20, 1, ['#7cd67c', '#f0cc50', '#e8483f'][i]); R(g, 6, 7, 20, 4, '#f4f2ea'); },
+    atm(g) { box(g, 1, -8, 14, 24, '#3f7a48', '#2a5a34', 18); R(g, 3, -5, 10, 7, '#1b1b2b'); R(g, 4, -4, 6, 1, '#7cd67c'); R(g, 4, 4, 8, 3, '#c4ced8'); },
+    df_perfume(g) { box(g, 1, -6, 30, 22, '#f4f2ea', '#c8c2b0', 18); for (const y of [-3, 5]) { R(g, 3, y, 26, 6, 'rgba(150,210,240,.5)'); for (let i = 0; i < 6; i++) { R(g, 4 + i * 4, y + 1, 3, 5, ['#c86aa8', '#e0b64f', '#7a3a6b', '#58b5e0'][i % 4]); R(g, 5 + i * 4, y, 1, 1, '#f0cc50'); } } },
+    df_choc(g) { box(g, 1, -6, 30, 22, '#7a4a2a', '#5e3a20', 18); for (const y of [-3, 5]) { R(g, 3, y, 26, 6, '#3e2c1c'); for (let i = 0; i < 6; i++) R(g, 4 + i * 4, y + 2, 3, 4, ['#d9483f', '#e0b64f', '#f4f2ea', '#3f86d1'][i % 4]); } },
+    df_gold(g) { box(g, 1, 0, 30, 16, '#1d2a5a', '#121a52', 8); R(g, 3, 1, 26, 6, 'rgba(150,210,240,.45)'); for (let i = 0; i < 5; i++) { disc(g, 6 + i * 5, 4, 2, 1, '#f0cc50'); R(g, 6 + i * 5, 3, 1, 1, '#fff4c0'); } },
+    foodcounter(g) { box(g, 0, 2, 64, 14, '#c8423a', '#8a2a24', 7); R(g, 1, 3, 62, 1, '#f08a7a'); for (let i = 0; i < 5; i++) { disc(g, 8 + i * 12, 6, 4, 2, '#f4efe0'); disc(g, 8 + i * 12, 5, 3, 1, ['#d88a36', '#7aba4a', '#e0b64f', '#c8423a', '#9e6a3a'][i]); } R(g, 2, -12, 60, 10, OUT); R(g, 3, -11, 58, 8, '#1d2a5a'); for (let i = 0; i < 4; i++) R(g, 6 + i * 14, -9, 10, 2, '#f0cc50'); },
+    palm_in(g) { R(g, 3, 10, 10, 6, OUT); R(g, 4, 11, 8, 4, '#c4ced8'); R(g, 7, -4, 2, 15, '#8a6640'); for (const [dx, dy] of [[-6, 0], [2, 0], [-5, -3], [2, -3], [-2, -5]]) R(g, 8 + dx, -6 + dy, 5, 2, '#3f8c42'); disc(g, 8, -6, 3, 2, '#2f6e3a'); },
+    trolley(g) { R(g, 2, 2, 12, 9, OUT); R(g, 3, 3, 10, 7, '#c4ced8'); R(g, 4, 4, 8, 1, '#8a949c'); R(g, 4, 7, 8, 1, '#8a949c'); R(g, 3, 11, 2, 3, OUT); R(g, 11, 11, 2, 3, OUT); R(g, 12, -2, 2, 5, '#5e5e6c'); },
+    // ---- هيئة التعدين ----
+    maptable(g) { box(g, 0, 2, 48, 28, '#8a6240', '#6b4a2b', 5); R(g, 3, 4, 42, 20, '#e8d8b0'); disc(g, 14, 12, 7, 5, '#b8a070'); disc(g, 32, 16, 9, 5, '#a89060'); R(g, 3, 13, 42, 1, '#a58a62'); R(g, 24, 4, 1, 20, '#a58a62'); for (const [x, y] of [[12, 10], [30, 15], [38, 8]]) R(g, x, y, 2, 2, '#d9483f'); },
+    samples(g) { box(g, 1, -6, 30, 22, '#7a5533', '#5e4227', 18); for (const y of [-2, 7]) { R(g, 3, y, 26, 7, '#3e2c1c'); for (let i = 0; i < 6; i++) disc(g, 5 + i * 4, y + 4, 1, 2, ['#f0cc50', '#d8794a', '#8a6a5a', '#e8e2d6', '#c8b878', '#f4f2ea'][i]); } },
+    ore(g) { R(g, 1, 6, 14, 9, OUT); R(g, 2, 7, 12, 7, '#6b4a2b'); disc(g, 5, 6, 3, 2, '#8a6a5a'); disc(g, 10, 5, 3, 3, '#d8794a'); disc(g, 8, 3, 2, 2, '#f0cc50'); },
   };
 
   const CARPETS = [['#a8393f', '#e0b64f', '#2b4f7f'], ['#2b5f7a', '#e8d4a0', '#a8393f'], ['#6a3f7a', '#e0b64f', '#2f7f78'], ['#3f6a48', '#e8d4a0', '#a8533a']];
   function drawFlat(g, f) {
     const px = f.x * 16;
     const py = f.y * 16;
+    if (f.s === 'runner') {
+      R(g, px, py, f.w * 16, f.h * 16, '#2b4f8a');
+      R(g, px + 2, py, f.w * 16 - 4, f.h * 16, '#3a62a8');
+      R(g, px + 2, py, 1, f.h * 16, '#f0cc50'); R(g, px + f.w * 16 - 3, py, 1, f.h * 16, '#f0cc50');
+      return;
+    }
+    if (f.s === 'rope') {
+      for (let x = px; x < px + f.w * 16; x += 16) { R(g, x + 6, py + 3, 4, 10, OUT); R(g, x + 7, py + 3, 2, 9, '#c4ced8'); disc(g, x + 8, py + 13, 3, 1, '#5e5e6c'); }
+      R(g, px + 8, py + 6, f.w * 16 - 16, 2, '#c8423a');
+      return;
+    }
+    if (f.s === 'label') {
+      // لوحة إرشاد: أزرق غامق وكتابة صفرا
+      const w = f.w * 16;
+      const hh = f.small ? 11 : 13;
+      R(g, px, py + 1, w, hh + 2, OUT);
+      R(g, px + 1, py + 2, w - 2, hh, '#1d2a5a');
+      R(g, px + 1, py + 2 + hh - 2, w - 2, 1, '#f0cc50');
+      g.save();
+      g.fillStyle = '#f4d860';
+      g.font = '700 ' + (f.small ? 8 : 9) + 'px "Noto Kufi Arabic", Tahoma, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.direction = 'rtl';
+      g.fillText(f.text, px + w / 2, py + 2 + hh / 2);
+      g.restore();
+      return;
+    }
     if (f.s === 'cushion') {
       R(g, px + 1, py + 2, 14, 12, OUT);
       R(g, px + 2, py + 3, 12, 10, '#c8423a');
@@ -800,6 +919,34 @@
       disc(g, px + 8, 13, 7, 7, OUT); disc(g, px + 8, 13, 6, 6, '#fbf6e6'); R(g, px + 8, 9, 1, 4, OUT); R(g, px + 8, 13, 3, 1, OUT);
     } else if (d.s === 'menu') {
       R(g, px + 1, 4, 30, 19, OUT); R(g, px + 2, 5, 28, 17, '#2f4f4a'); for (let y = 8; y < 20; y += 3) R(g, px + 5, y, 22, 1, y % 2 ? '#f4efe0' : '#c8d8c8');
+    } else if (d.s === 'bigwindow') {
+      // نوافذ كبيرة تطل على المدرج، وطيارة واقفة
+      const w = (d.w || 4) * 16;
+      R(g, px, 2, w, 24, OUT);
+      R(g, px + 1, 3, w - 2, 15, '#8fd0ea');
+      R(g, px + 1, 13, w - 2, 5, '#bfe6f4');
+      R(g, px + 1, 18, w - 2, 7, '#5e646e');
+      for (let x = px + 6; x < px + w - 6; x += 10) R(g, x, 21, 5, 1, '#f4f2ea');
+      R(g, px + w / 2 - 4, 6, 10, 12, '#f4f2ea'); R(g, px + w / 2 - 4, 6, 10, 3, '#2b6fc8'); R(g, px + 6, 15, w - 20, 4, '#f4f2ea');
+      for (let x = px + 16; x < px + w; x += 16) R(g, x, 3, 1, 22, '#c4ced8');
+    } else if (d.s === 'fids') {
+      // لوحة الرحلات: المغادرة
+      const w = (d.w || 6) * 16;
+      R(g, px + 2, 2, w - 4, 23, OUT);
+      R(g, px + 3, 3, w - 6, 21, '#121a2a');
+      R(g, px + 3, 3, w - 6, 6, '#1d2a5a');
+      g.save(); g.fillStyle = '#f4d860'; g.font = '700 7px "Noto Kufi Arabic", Tahoma, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.direction = 'rtl'; g.fillText('المغادرة', px + w / 2, 6); g.restore();
+      for (let i = 0; i < 4; i++) {
+        const y = 11 + i * 3;
+        R(g, px + 6, y, 18, 2, '#f0cc50');
+        R(g, px + 28, y, 30, 2, '#e8e8dc');
+        R(g, px + w - 26, y, 18, 2, i === 1 ? '#e8483f' : '#7cd67c');
+      }
+    } else if (d.s === 'gatesign') {
+      const w = (d.w || 2) * 16;
+      R(g, px + 2, 4, w - 4, 16, OUT);
+      R(g, px + 3, 5, w - 6, 14, '#f0cc50');
+      g.save(); g.fillStyle = '#121a2a'; g.font = '700 9px "Noto Kufi Arabic", Tahoma, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.direction = 'rtl'; g.fillText('بوابة ' + (d.text || ''), px + w / 2, 12); g.restore();
     } else if (d.s === 'board') {
       const w = (d.w || 3) * 16;
       R(g, px, 3, w, 22, '#7a5533'); R(g, px + 2, 5, w - 4, 18, '#2f5f48');
@@ -833,6 +980,14 @@
       const c = ((x >> 5) + (y >> 5)) & 1;
       if (h > 0.97) return '#c8bea8';
       return c ? '#efe6d2' : '#e0d6be';
+    }
+    if (style === 'airport') {
+      // رخام رمادي فاتح بمربعات كبيرة ولمعة
+      if ((x & 31) === 0 || (y & 31) === 0) return '#b8c0c8';
+      const c = ((x >> 5) + (y >> 5)) & 1;
+      if (((x + y) & 63) < 3 && c) return '#ffffff';
+      if (h > 0.985) return '#c8d0d8';
+      return c ? '#eef2f4' : '#e2e8ec';
     }
     // terrazzo
     if (h > 0.985) return '#a89f8f';
@@ -1007,6 +1162,7 @@
     coin(g) { disc(g, 4, 4, 3, 3, '#a87c1e'); disc(g, 4, 4, 2, 2, '#f0cc50'); R(g, 4, 3, 1, 3, '#a87c1e'); },
     game(g) { R(g, 0, 3, 8, 4, '#5a4aa8'); R(g, 1, 4, 3, 1, '#ffffff'); R(g, 2, 3, 1, 3, '#ffffff'); R(g, 6, 4, 1, 1, '#e8483f'); },
     sick(g) { R(g, 3, 0, 2, 8, '#d9483f'); R(g, 0, 3, 8, 2, '#d9483f'); },
+    pick(g) { R(g, 0, 1, 7, 2, '#6b6b7c'); R(g, 0, 2, 1, 2, '#6b6b7c'); R(g, 6, 2, 1, 2, '#6b6b7c'); R(g, 3, 2, 2, 6, '#8a5a34'); },
     crown(g) { R(g, 0, 6, 8, 2, '#c9962e'); R(g, 0, 2, 2, 4, '#f0cc50'); R(g, 3, 1, 2, 5, '#f0cc50'); R(g, 6, 2, 2, 4, '#f0cc50'); R(g, 3, 6, 2, 1, '#d9483f'); },
     bag(g) { R(g, 2, 3, 4, 5, '#8a5a34'); R(g, 3, 1, 2, 2, '#6b4426'); R(g, 3, 4, 2, 2, '#f0cc50'); },
     hammer(g) { R(g, 1, 1, 6, 3, '#6b6b7c'); R(g, 3, 4, 2, 4, '#8a5a34'); },
@@ -1067,5 +1223,37 @@
     R(g, 32, 14 + tilt, 6, 6, '#6b6b7c'); // الثقل
     return { c, ax: 20, ay: 35 };
   }
-  VQ.Art = { pumpSprite, planeSprite, mk, R, hash, disc, buildGround, buildOutdoor, OUTDOOR, buildBuilding, interiorFloor, furniture, charSprite, emoteSprite, graveSprite, ICONS };
+  // مدخل المنجم في وجه الجبل. stage: 0 مكتشف (علم وخيمة)، 1 يتجهز، 2 شغال (عربة تطلع وتدخل)
+  function mineSprite(mineral, stage, frame) {
+    const { c, g } = mk(64, 48);
+    const col = (VQ.MINERALS[mineral] || {}).color || '#f0cc50';
+    if (stage === 0) {
+      // علم المساحة وخيمة صغيرة قدام الجبل
+      R(g, 14, 18, 2, 28, '#5e5e6c'); R(g, 16, 18, 12, 8, '#d9483f'); R(g, 16, 21, 12, 2, '#f4f2ea');
+      for (let i = 0; i < 14; i++) R(g, 34 + i, 44 - i, Math.max(1, 28 - i * 2), 1, i % 3 ? '#e8d8b0' : '#c8b48a');
+      R(g, 34, 44, 28, 1, OUT);
+      disc(g, 22, 44, 4, 2, OUT); disc(g, 22, 43, 3, 1, col);
+      return { c, ax: 32, ay: 47 };
+    }
+    // المدخل: قوس خشب وظلام
+    arch(g, 18, 6, 28, 38, OUT);
+    arch(g, 20, 8, 24, 36, '#1b1218');
+    R(g, 18, 6, 4, 38, '#8a5a34'); R(g, 42, 6, 4, 38, '#8a5a34'); R(g, 18, 6, 28, 4, '#a86e40'); R(g, 19, 7, 26, 1, '#c8905a');
+    R(g, 17, 40, 30, 4, '#5e4227');
+    // السكة
+    for (let y = 30; y < 48; y += 3) R(g, 22, y, 20, 1, '#6b4a2b');
+    R(g, 25, 26, 2, 22, '#8a8a98'); R(g, 37, 26, 2, 22, '#8a8a98');
+    if (stage === 1) {
+      R(g, 4, 36, 12, 10, OUT); R(g, 5, 37, 10, 8, '#c49a64'); R(g, 50, 30, 3, 16, '#8a5a34'); R(g, 47, 30, 10, 2, '#8a5a34');
+      return { c, ax: 32, ay: 47 };
+    }
+    // فانوس وكومة خام وعربة تتحرك
+    R(g, 47, 12, 4, 6, OUT); R(g, 48, 13, 2, 4, '#f3d27a');
+    disc(g, 8, 44, 7, 4, OUT); disc(g, 8, 43, 6, 3, '#8a7a6a'); for (let i = 0; i < 7; i++) R(g, 3 + i * 2, 41 + (i % 2), 2, 1, col);
+    const cy = [34, 30, 26, 30][frame % 4];
+    R(g, 23, cy, 18, 10, OUT); R(g, 24, cy + 1, 16, 7, '#5e5e6c'); R(g, 24, cy + 1, 16, 2, col); R(g, 26, cy - 1, 4, 2, col); R(g, 33, cy - 1, 5, 2, col);
+    disc(g, 26, cy + 10, 2, 2, OUT); disc(g, 38, cy + 10, 2, 2, OUT);
+    return { c, ax: 32, ay: 47 };
+  }
+  VQ.Art = { mineSprite, pumpSprite, planeSprite, mk, R, hash, disc, buildGround, buildOutdoor, OUTDOOR, buildBuilding, interiorFloor, furniture, charSprite, emoteSprite, graveSprite, ICONS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

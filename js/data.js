@@ -78,7 +78,30 @@
     PAYOUT: 0.5, // نسبة الأرباح الموزعة على المساهمين
     VAT: 0.05, // ضريبة القيمة المضافة لما تنطرح
     FUND_GRANT: 0.02, // مكرمة سنوية للمواطنين من الصندوق إذا كبر واجد
+    // المناجم: الجبال الشرقية مغطاة بالضباب لين يستكشفونها
+    EXPLORE_COST: 16, // نقاط استكشاف لكل قطعة أرض ٨×٨
+    MINE_OPEN_COST: 1800, // كلفة فتح منجم بعد اكتشافه
+    MINE_BUILD_DAYS: 3, // كم يوم يحتاج تجهيز المنجم
+    MINE_SHARE: 0.7, // نصيب الدولة من دخل المنجم
+    AIRPORT_SHOPS: 0.12, // من صرف السايح يروح لمحلات المطار والأسواق الحرة
   };
+
+  // المعادن اللي ممكن تنلقى في الجبال. value دخل يوم المنجم بطاقم كامل
+  VQ.MINERALS = {
+    salt: { name: 'ملح', value: 300, color: '#f4f2ea', desc: 'ملح صخري للأكل والصناعة' },
+    marble: { name: 'رخام', value: 380, color: '#e8e2d6', desc: 'رخام أبيض للبناء والقصور' },
+    copper: { name: 'نحاس', value: 500, color: '#d8794a', desc: 'نحاس للأسلاك والمصانع' },
+    iron: { name: 'حديد', value: 420, color: '#8a6a5a', desc: 'خام حديد للحديد والصلب' },
+    phosphate: { name: 'فوسفات', value: 350, color: '#c8b878', desc: 'فوسفات للسماد والزراعة' },
+    gold: { name: 'ذهب', value: 800, color: '#f0cc50', desc: 'عروق ذهب نادرة في قلب الجبل' },
+  };
+  // طاقم كل منجم بعد ما ينفتح
+  VQ.MINE_JOBS = [
+    { title: 'مهندس تعدين', wage: 90, minSkill: 40, edu: 4, minAge: 23 },
+    { title: 'عامل منجم', wage: 52 },
+    { title: 'عامل منجم', wage: 52 },
+    { title: 'سائق شاحنة', wage: 46, edu: 1 },
+  ];
 
   // السنة أربعة أيام، كل يوم موسم. farm للمحصول، well للماي، thirst للعطش
   VQ.SEASONS = [
@@ -168,6 +191,7 @@
     central: { name: 'المصرف المركزي', place: 'central', start: 0, needs: 'bank', cost: 4800, work: 5500, desc: 'استقرار الأسعار والفايدة والعملة والرقابة على المصرف' },
     oil: { name: 'شركة النفط', place: 'oil', start: 0, needs: 'works', cost: 6000, work: 6500, desc: 'تصدير النفط، أكبر دخل للدولة لما تشتغل' },
     airport: { name: 'المطار', place: 'airport', start: 0, needs: 'works', cost: 5000, work: 7000, desc: 'سياح يصرفون في البلد، وسفر للناس' },
+    mining: { name: 'هيئة التعدين', place: 'mining', start: 0, needs: 'works', cost: 4200, work: 5500, desc: 'تستكشف الجبال الشرقية وتفتح المناجم' },
   };
   // مراحل التعليم: الابتدائي من ٦، الإعدادي من ١٢، الثانوي من ١٥، الجامعة من ١٨
   // need: الفرع ومستواه اللي يفتح المرحلة
@@ -267,10 +291,16 @@
     exchange: [{ title: 'رئيس هيئة السوق', wage: 110, minSkill: 50, edu: 4, minAge: 35 }, { title: 'مراقب السوق', wage: 80, minSkill: 40, edu: 4 }, { title: 'وسيط مالي', wage: 70, minSkill: 35, edu: 3 }, { title: 'وسيط مالي', wage: 70, minSkill: 35, edu: 3, lvl: 2 }, { title: 'مراقب السوق', wage: 80, minSkill: 40, edu: 4, lvl: 3 }],
     central: [{ title: 'محافظ المصرف المركزي', wage: 120, minSkill: 55, edu: 4, minAge: 35 }, { title: 'اقتصادي', wage: 90, minSkill: 45, edu: 4 }, { title: 'مفتش بنوك', wage: 70, minSkill: 35, edu: 3 }, { title: 'اقتصادي', wage: 90, minSkill: 45, edu: 4, lvl: 2 }, { title: 'مفتش بنوك', wage: 70, minSkill: 35, edu: 3, lvl: 3 }],
     oil: [{ title: 'مهندس بترول', wage: 110, minSkill: 50, edu: 4, minAge: 25 }, { title: 'فني حفر', wage: 70, minSkill: 30, edu: 3 }, { title: 'عامل حقل', wage: 55, edu: 2 }, { title: 'عامل حقل', wage: 55, edu: 2 }, { title: 'مهندس بترول', wage: 110, minSkill: 50, edu: 4, minAge: 25, lvl: 2 }, { title: 'عامل حقل', wage: 55, edu: 2, lvl: 2 }, { title: 'فني حفر', wage: 70, minSkill: 30, edu: 3, lvl: 3 }, { title: 'عامل حقل', wage: 55, edu: 2, lvl: 3 }],
-    airport: [{ title: 'مدير المطار', wage: 100, minSkill: 50, edu: 4, minAge: 30 }, { title: 'مراقب جوي', wage: 85, minSkill: 45, edu: 4 }, { title: 'موظف جوازات', wage: 50, edu: 3 }, { title: 'موظف جوازات', wage: 50, edu: 3 }, { title: 'عامل أرضي', wage: 40 }, { title: 'عامل أرضي', wage: 40 }, { title: 'مضيف طيران', wage: 60, edu: 3, minAge: 20, lvl: 2 }, { title: 'مضيف طيران', wage: 60, edu: 3, minAge: 20, lvl: 2 }],
+    airport: [{ title: 'مدير المطار', wage: 100, minSkill: 50, edu: 4, minAge: 30 }, { title: 'مراقب جوي', wage: 85, minSkill: 45, edu: 4 }, { title: 'موظف جوازات', wage: 50, edu: 3 }, { title: 'موظف جوازات', wage: 50, edu: 3 }, { title: 'عامل أرضي', wage: 40 }, { title: 'عامل أرضي', wage: 40 }, { title: 'مضيف طيران', wage: 60, edu: 3, minAge: 20, lvl: 2 }, { title: 'مضيف طيران', wage: 60, edu: 3, minAge: 20, lvl: 2 },
+      { title: 'موظف كاونتر', wage: 44, edu: 2 }, { title: 'موظف تفتيش أمني', wage: 48, edu: 2, minAge: 21 }, { title: 'باريستا المطار', wage: 38 }, { title: 'بائع الأسواق الحرة', wage: 45, edu: 2, lvl: 2 }, { title: 'موظف تفتيش أمني', wage: 48, edu: 2, minAge: 21, lvl: 2 }, { title: 'موظف استعلامات', wage: 42, edu: 2, lvl: 3 }, { title: 'طبّاخ المطار', wage: 45, lvl: 3 }],
+    mining: [{ title: 'رئيس هيئة التعدين', wage: 100, minSkill: 45, edu: 4, minAge: 30 }, { title: 'جيولوجي', wage: 85, minSkill: 35, edu: 4 }, { title: 'مستكشف', wage: 55, edu: 2 }, { title: 'مستكشف', wage: 55, edu: 2 }, { title: 'جيولوجي', wage: 85, minSkill: 35, edu: 4, lvl: 2 }, { title: 'مستكشف', wage: 55, edu: 2, lvl: 3 }],
     clinic: [{ title: 'طبيب', wage: 90, minSkill: 40, edu: 4, minAge: 25 }, { title: 'ممرّض', wage: 50, edu: 3 }, { title: 'ممرّض', wage: 50, edu: 3 }, { title: 'طبيب', wage: 90, minSkill: 50, lvl: 2, edu: 4, minAge: 25 }, { title: 'ممرّض', wage: 50, lvl: 3, edu: 3 }],
     farm: [{ title: 'مزارع', wage: 42 }, { title: 'مزارع', wage: 42 }, { title: 'مزارع', wage: 42 }, { title: 'مزارع', wage: 42 }],
   };
+
+  // كل منجم له طاقمه، والوظايف تنفتح بس بعد ما ينفتح المنجم
+  VQ.MINE_IDS = ['mine1', 'mine2', 'mine3', 'mine4', 'mine5', 'mine6'];
+  for (const id of VQ.MINE_IDS) VQ.JOBS[id] = VQ.MINE_JOBS;
 
   // ٠١٢٣ بدل 0123
   VQ.ar = function (n) {

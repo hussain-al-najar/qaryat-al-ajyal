@@ -139,6 +139,7 @@
   }
   function leaveBuilding() {
     const b = world.places[player.scene].b;
+    if (b.id === 'airport') pax.length = 0;
     changeScene(() => {
       player.scene = 'out';
       player.x = b.front.x * TS + 8;
@@ -513,12 +514,73 @@
       list.push({ foot: (gy + 1) * TS, draw: () => ctx.drawImage(graveImg.c, sx, sy) });
     }
     const flying = planes(list);
+    drawMines(list);
     drawPeople(list, 'out');
     drawPlayer(list);
     list.sort((a, b) => a.foot - b.foot);
     for (const e of list) e.draw();
+    drawFog();
     if (flying) flying();
     drawNight();
+  }
+
+  // ---- الإقليم الشرقي: ضباب على اللي ما انكشف، ومداخل المناجم ----
+  const E = world.east;
+  const mineCache = {};
+  function mineImg(mineral, stage, fr) {
+    const k = mineral + stage + fr;
+    return mineCache[k] || (mineCache[k] = Art.mineSprite(mineral, stage, fr));
+  }
+  function drawMines(list) {
+    if (!world.mineSites) return;
+    const fr = Math.floor(frame / 20) % 4;
+    for (const m of world.mineSites) {
+      const site = village.mineSite(m.id);
+      if (!site || !site.found) continue;
+      const sp = mineImg(m.mineral, site.open ? 2 : site.building ? 1 : 0, site.open && !reduceMotion ? fr : 0);
+      const px = m.ex * TS + 8 - sp.ax - cam.x;
+      const foot = (m.ey + 1) * TS + 2;
+      const py = foot - sp.ay - cam.y;
+      if (px + 64 < 0 || px > viewW || py > viewH || py + 48 < 0) continue;
+      list.push({ foot, draw: () => ctx.drawImage(sp.c, px, py) });
+    }
+  }
+  function chunkOpen(cx, cy) {
+    if (cx < 0 || cy < 0 || cx >= E.cols || cy >= E.rows) return true;
+    const st = village.state.mines;
+    return !st || !!st.explored[cy * E.cols + cx];
+  }
+  function drawFog() {
+    if (!E || !village.state.mines) return;
+    const size = E.chunk * TS;
+    const c0 = Math.max(0, Math.floor((cam.x - E.x0 * TS) / size));
+    const c1 = Math.min(E.cols - 1, Math.floor((cam.x + viewW - E.x0 * TS) / size));
+    const r0 = Math.max(0, Math.floor(cam.y / size));
+    const r1 = Math.min(E.rows - 1, Math.floor((cam.y + viewH) / size));
+    const drift = reduceMotion ? 0 : Math.floor(frame / 30);
+    for (let cy = r0; cy <= r1; cy++) {
+      for (let cx = c0; cx <= c1; cx++) {
+        if (chunkOpen(cx, cy)) continue;
+        const x = E.x0 * TS + cx * size - cam.x;
+        const y = cy * size - cam.y;
+        ctx.fillStyle = '#2a2232';
+        ctx.fillRect(x, y, size, size);
+        // غبار يتحرك فوق الضباب
+        ctx.fillStyle = 'rgba(120,100,120,.18)';
+        for (let i = 0; i < 10; i++) {
+          const hx = Art.hash(cx * 13 + i, cy * 7);
+          const hy = Art.hash(cy * 11 + i, cx * 5);
+          ctx.fillRect(x + ((hx * size + drift * (1 + i % 3)) % size), y + hy * size, 10 + (i % 4) * 4, 1);
+        }
+        // حافة متدرجة جنب الأرض المكشوفة
+        ctx.fillStyle = 'rgba(42,34,50,.55)';
+        const band = 10;
+        if (chunkOpen(cx - 1, cy)) for (let i = 0; i < size; i += 4) ctx.fillRect(x - band + ((i >> 2) & 1) * 4, y + i, band - ((i >> 2) & 1) * 4, 4);
+        if (chunkOpen(cx + 1, cy)) for (let i = 0; i < size; i += 4) ctx.fillRect(x + size, y + i, band - ((i >> 2) & 1) * 4, 4);
+        if (chunkOpen(cx, cy - 1)) for (let i = 0; i < size; i += 4) ctx.fillRect(x + i, y - band + ((i >> 2) & 1) * 4, 4, band - ((i >> 2) & 1) * 4);
+        if (chunkOpen(cx, cy + 1)) for (let i = 0; i < size; i += 4) ctx.fillRect(x + i, y + size, 4, band - ((i >> 2) & 1) * 4);
+      }
+    }
   }
 
   // الطيارات: وحدة واقفة قدام المطار، ووحدة تقلع وتنزل على المدرج
@@ -674,6 +736,7 @@
       list.push({ foot: (it.y + it.th) * TS, draw: () => ctx.drawImage(sp.c, sx, sy) });
     }
     drawPeople(list, player.scene);
+    if (player.scene === 'airport') drawPassengers(list, inr);
     drawPlayer(list);
     list.sort((a, b) => a.foot - b.foot);
     for (const e of list) e.draw();
@@ -681,6 +744,81 @@
     if (d > 0) {
       ctx.fillStyle = 'rgba(30,25,70,' + (d * 0.35).toFixed(3) + ')';
       ctx.fillRect(0, 0, viewW, viewH);
+    }
+  }
+
+  // ---- المسافرين في صالة المطار: زحمة للعرض بس، ما يدخلون المحاكاة ----
+  const pax = [];
+  const PAX_COLORS = ['#d9483f', '#2b6fc8', '#3f7a48', '#e0b64f', '#8e62c9', '#5e5e6c', '#d88a36'];
+  function paxLook() {
+    const src = village.people.length ? village.people[Math.floor(Math.random() * village.people.length)] : null;
+    return src ? { look: src.look, gender: src.gender } : { look: player.look, gender: 'm' };
+  }
+  function spawnPassenger(inr) {
+    const R = inr.anchors.route;
+    const pick = (l) => l[Math.floor(Math.random() * l.length)];
+    const departing = Math.random() < 0.6;
+    const door = [inr.door.x, inr.door.y - 1];
+    const legs = departing
+      ? [pick(R.checkin), pick(R.security), pick(R.passport), pick(R.gates), 'board']
+      : [pick(R.passport), pick(R.carousel), door, 'exit'];
+    const start = departing ? door : pick(R.gates);
+    const who = paxLook();
+    pax.push({ x: start[0], y: start[1], tx: start[0], ty: start[1], path: [], legs, wait: 0, dir: 1, look: who.look, gender: who.gender, bag: PAX_COLORS[Math.floor(Math.random() * PAX_COLORS.length)], step: 0 });
+  }
+  function updatePassengers(inr, dt) {
+    const ap = village.state.airport;
+    if (village.buildProgress('airport') < 1) { pax.length = 0; return; }
+    const want = Math.min(18, 5 + Math.round((ap && ap.tourists) || 0) + village.people.filter((p) => p.loc === 'airport').length);
+    if (pax.length < want && Math.random() < dt * 1.2) spawnPassenger(inr);
+    for (let i = pax.length - 1; i >= 0; i--) {
+      const q = pax[i];
+      if (q.wait > 0) { q.wait -= dt; continue; }
+      if (!q.path.length) {
+        const next = q.legs[0];
+        if (next === 'board' || next === 'exit') { pax.splice(i, 1); continue; }
+        if (Math.abs(q.x - q.tx) < 0.01 && Math.abs(q.y - q.ty) < 0.01) {
+          // وصل للمحطة: يوقف شوي (الكاونتر، التفتيش، الجوازات، البوابة)
+          if (q.started) { q.legs.shift(); q.wait = q.legs[0] === 'board' ? 4 + Math.random() * 6 : 0.6 + Math.random() * 1.6; q.started = false; continue; }
+          const path = VQ.findPath(inr.grid, inr.w, inr.h, Math.round(q.x), Math.round(q.y), next[0], next[1]);
+          if (!path) { pax.splice(i, 1); continue; }
+          q.path = path;
+          q.started = true;
+          if (!path.length) continue;
+        }
+        if (!q.path.length) continue;
+        q.tx = q.path.shift();
+        q.ty = q.path.shift();
+      }
+      const sp = dt * 3.2;
+      const dx = q.tx - q.x;
+      const dy = q.ty - q.y;
+      if (Math.abs(dx) > 0.001) q.dir = dx > 0 ? 3 : 2;
+      else if (Math.abs(dy) > 0.001) q.dir = dy > 0 ? 0 : 1;
+      q.x += Math.max(-sp, Math.min(sp, dx));
+      q.y += Math.max(-sp, Math.min(sp, dy));
+      q.step += dt * 8;
+      if (Math.abs(q.tx - q.x) < 0.01 && Math.abs(q.ty - q.y) < 0.01 && q.path.length) { q.tx = q.path.shift(); q.ty = q.path.shift(); }
+    }
+  }
+  let paxLast = performance.now();
+  function drawPassengers(list, inr) {
+    const now = performance.now();
+    updatePassengers(inr, Math.min(0.05, (now - paxLast) / 1000));
+    paxLast = now;
+    for (const q of pax) {
+      const moving = Math.abs(q.tx - q.x) + Math.abs(q.ty - q.y) > 0.01;
+      const img = Art.charSprite(q.look, 'adult', q.gender, q.dir, moving ? [1, 0, 2, 0][Math.floor(q.step) % 4] : 0);
+      const sx = Math.round(q.x * TS - cam.x);
+      const sy = Math.round(q.y * TS + 16 - 24 - cam.y);
+      list.push({ foot: (q.y + 1) * TS - 1, draw: () => {
+        // شنطة بعجلات جنبه
+        const bx = q.dir === 2 ? sx + 13 : sx - 3;
+        ctx.fillStyle = '#3a2a22'; ctx.fillRect(bx, sy + 13, 7, 10);
+        ctx.fillStyle = q.bag; ctx.fillRect(bx + 1, sy + 14, 5, 8);
+        ctx.fillStyle = '#3a2a22'; ctx.fillRect(bx + 3, sy + 10, 1, 4);
+        ctx.drawImage(img, sx, sy);
+      } });
     }
   }
 
@@ -719,6 +857,7 @@
     { title: 'الترفيه والتسوق', ids: ['toys', 'arcade', 'books', 'clothes'] },
     { title: 'الخدمات', ids: ['school', 'clinic', 'farm', 'lake', 'cemetery'] },
     { title: 'فروع الدولة', ids: ['finance', 'works', 'supply', 'security', 'court', 'bank'] },
+    { title: 'الجنوب', ids: ['airport', 'oil', 'central', 'exchange', 'university'] },
     { title: 'القصور', ids: world.palaces.map((b) => b.id) },
   ];
 
@@ -788,6 +927,20 @@
       g.fillStyle = b.kind === 'palace' ? '#ffd24a' : b.kind === 'house' ?(village.residents(b.id).length ? '#f0cc70' : '#e8dcc0') : b.kind === 'hall' ? '#46c2b0' : '#e0705a';
       g.fillRect(b.x * TS * sx, b.y * TS * sy, b.w * TS * sx, b.h * TS * sy);
     }
+    const ms = village.state.mines;
+    if (E && ms) {
+      g.fillStyle = '#2a2232';
+      for (let cy = 0; cy < E.rows; cy++) for (let cx = 0; cx < E.cols; cx++) {
+        if (ms.explored[cy * E.cols + cx]) continue;
+        g.fillRect((E.x0 + cx * E.chunk) * TS * sx, cy * E.chunk * TS * sy, E.chunk * TS * sx + 1, E.chunk * TS * sy + 1);
+      }
+      for (const m of world.mineSites) {
+        const site = village.mineSite(m.id);
+        if (!site || !site.found) continue;
+        g.fillStyle = site.open ? VQ.MINERALS[m.mineral].color : '#d9483f';
+        g.fillRect(m.ex * TS * sx - 2, m.ey * TS * sy - 2, 5, 5);
+      }
+    }
     let px = player.x;
     let py = player.y;
     if (player.scene !== 'out') { const f = world.places[player.scene].front; px = f.x * TS; py = f.y * TS; }
@@ -809,12 +962,13 @@
         const pr = village.buildProgress(id);
         return pr >= 1 ? '' : '<small>' + (pr > 0 ? ar(Math.floor(pr * 100)) + '٪' : 'أرض') + '</small>';
       };
-      const groups = PLACE_GROUPS.map((gr) => '<h3>' + gr.title + '</h3><div class="placegrid">' + gr.ids.map((id) => '<button data-go="' + id + '">' + esc(world.places[id].name) + siteMark(id) + '</button>').join('') + '</div>').join('');
+      const found = world.mineSites.filter((m) => { const x = village.mineSite(m.id); return x && x.found; }).map((m) => m.id);
+      const groups = PLACE_GROUPS.concat([{ title: 'الإقليم الشرقي', ids: ['mining'].concat(found) }]).map((gr) => '<h3>' + gr.title + '</h3><div class="placegrid">' + gr.ids.map((id) => '<button data-go="' + id + '">' + esc(world.places[id].name) + siteMark(id) + '</button>').join('') + '</div>').join('');
       const houses = world.houses.map((h) => {
         const n = village.residents(h.id).length;
         return '<button data-go="' + h.id + '" class="' + (n ? 'lived' : '') + '">' + esc(h.name) + (n ? '<small>' + ar(n) + '</small>' : '') + '</button>';
       }).join('');
-      body.innerHTML = '<canvas id="minimap" width="327" height="258" aria-label="خريطة القرية"></canvas>' + groups + '<h3>البيوت</h3><div class="placegrid houses">' + houses + '</div><p class="note">اضغط على أي مكان وتمشي له.</p>';
+      body.innerHTML = '<canvas id="minimap" width="350" height="260" aria-label="خريطة القرية والإقليم الشرقي"></canvas>' + groups + '<h3>البيوت</h3><div class="placegrid houses">' + houses + '</div><p class="note">اضغط على أي مكان وتمشي له.</p>';
       for (const btn of body.querySelectorAll('[data-go]')) btn.addEventListener('click', () => goToPlace(btn.dataset.go));
       renderMinimap();
       return;
@@ -1063,13 +1217,13 @@
         '<p class="note">ما ينصرف شي فوق اعتماده. المشاريع توقف لما يخلص اعتمادها، والرواتب والدعم يزيدون بملحق موازنة.</p>';
     }
     const taxRev = (f.tax || 0) + (f.vat || 0) + (f.fees || 0) + (f.caravans || 0);
-    const nonTax = (f.oil || 0) + (f.sales || 0) + (f.airport || 0) + (f.other || 0);
+    const nonTax = (f.oil || 0) + (f.mining || 0) + (f.sales || 0) + (f.airport || 0) + (f.other || 0);
     const rev = '<h3>الإيرادات (السنة الماضية)</h3>' +
       '<p class="meta">ضريبية ' + money(taxRev) + ' · غير ضريبية ' + money(nonTax) + '</p>' +
       row('ضريبة الدخل والأرباح (' + ar(Math.round(st.gov.tax * 100)) + '٪)', f.tax || 0) +
       row('ضريبة القيمة المضافة' + (st.gov.vat ? ' (' + ar(Math.round(st.gov.vat * 100)) + '٪)' : ' (ما في)'), f.vat || 0) +
       row('الرسوم والغرامات', f.fees || 0) + row('الجمارك والقوافل', f.caravans || 0) +
-      row('أرباح النفط', f.oil || 0) + row('أرباح محلات الدولة', f.sales || 0) + row('المطار', f.airport || 0) + row('بيع أملاك وإيرادات ثانية', f.other || 0);
+      row('أرباح النفط', f.oil || 0) + row('المناجم', f.mining || 0) + row('أرباح محلات الدولة', f.sales || 0) + row('المطار', f.airport || 0) + row('بيع أملاك وإيرادات ثانية', f.other || 0);
     const d = st.debt || { items: [] };
     const debt = '<h3>الدين العام</h3>' +
       '<p class="big">' + money(village.debtTotal()) + '</p>' +
@@ -1102,6 +1256,30 @@
       '<div class="row"><span>دخله السنة الماضية</span><b>' + money(fund.lastIn) + '</b></div>' +
       '<div class="row"><span>سحب منه</span><b>' + money(fund.lastOut) + '</b></div>' +
       '<p class="note">نص فايض الخزينة يروح للصندوق ويستثمر، والدولة تسحب منه وقت العجز. إذا كبر واجد يتوزع منه مكرمة على المواطنين.</p>';
+    return html;
+  }
+  function minesHtml(st) {
+    const money = (v) => ar(Math.round(v)) + ' درهم';
+    const ms = st.mines;
+    const lvl = st.gov.branches.mining ? st.gov.branches.mining.level : 0;
+    let html = '<h3>المناجم والإقليم الشرقي</h3>';
+    if (!ms || !lvl) return html + '<p class="meta">الجبال الشرقية مغطاة بالضباب. تنكشف لما تنبني هيئة التعدين ويطلع المستكشفين.</p>';
+    const pct = Math.round((ms.revealed / ms.explored.length) * 100);
+    const staff = village.people.filter((p) => p.job && p.job.place === 'mining');
+    const students = village.people.filter((p) => p.major === 'geology' && p.student).length;
+    html += '<div class="row"><span>المكتشف من الجبال</span><b>' + ar(pct) + '٪</b></div><div class="progress"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="row"><span>المستكشفين والجيولوجيين</span><b>' + ar(staff.length) + '</b></div>' +
+      '<div class="row"><span>طلبة الجيولوجيا</span><b>' + ar(students) + '</b></div>' +
+      '<div class="row"><span>دخل المناجم السنة الماضية</span><b>' + money(ms.lastRevenue) + '</b></div>';
+    for (const m of world.mineSites) {
+      const site = ms.sites.find((x) => x.id === m.id);
+      if (!site || !site.found) continue;
+      const crew = village.people.filter((p) => p.job && p.job.place === m.id).length;
+      const state = site.open ? 'شغال · ' + ar(crew) + ' عمال · ' + money(site.output) + ' باليوم' : site.building ? 'يتجهز' : 'مكتشف، ينتظر تمويل';
+      html += '<div class="row"><span>' + esc(m.place) + ' <small>سنة ' + ar(site.foundYear) + (site.finder ? ' · لقاه ' + esc(site.finder) : '') + '</small></span><small>' + state + '</small></div>';
+    }
+    const hidden = ms.sites.filter((x) => !x.found).length;
+    if (hidden) html += '<p class="note">باقي ' + ar(hidden) + ' مناجم مدفونة في الجبال. الطرق الترابية تسهّل الوصول، فالمستكشفين يمشون معها أول.</p>';
     return html;
   }
   function eduHtml(st) {
@@ -1202,8 +1380,8 @@
       '<p class="note">' + (gov.lastFin ? 'حساب السنة الماضية' : 'حساب السنة الحالية للحين') + '</p>' +
       finRow('ضرايب وزكاة', f.tax) + finRow('مبيعات وأرباح الدولة', f.sales) + finRow('القوافل والجمارك', f.caravans) + finRow('دخل ثاني', f.other) + finRow('الرواتب', f.salaries) + finRow('مشاريع البناء', f.projects) + finRow('الدعم والعلاج', f.welfare) + finRow('استيراد أكل وماي', f.imports || 0) + finRow('رسوم وغرامات', f.fees || 0) + finRow('حصة الدولة في التقاعد', f.pension || 0) + finRow('قروض المصرف', f.loans || 0) +
       (gov.freeze ? '<p class="note">التوظيف الإداري مجمّد لين ترتاح الخزينة.</p>' : '') +
-      finRow('المطار والسياحة', f.airport || 0) + finRow('النفط', f.oil || 0) +
-      pillarsHtml(st) + lawsHtml(st) + oilHtml(st) + marketHtml(st) + firmsHtml(st) + eduHtml(st) + airportHtml(st) + courtHtml(st) + pensionHtml(st) +
+      finRow('المطار والسياحة', f.airport || 0) + finRow('النفط', f.oil || 0) + finRow('المناجم', f.mining || 0) +
+      pillarsHtml(st) + lawsHtml(st) + oilHtml(st) + minesHtml(st) + marketHtml(st) + firmsHtml(st) + eduHtml(st) + airportHtml(st) + courtHtml(st) + pensionHtml(st) +
       '<h3>البناء الحين</h3>' + (pr ? '<p class="meta">' + esc(projectName) + (pr.level > 1 ? ' للمستوى ' + ar(pr.level) : '') + ' · ' + ar(Math.floor((pr.done / pr.work) * 100)) + '٪</p><div class="progress"><i style="width:' + Math.floor((pr.done / pr.work) * 100) + '%"></i></div>' : '<p class="meta">ما فيه مشروع دولة الحين. الحاكم يقرر لما تكفي الخزينة.</p>') + (sites ? '<p class="meta">مواقع البناء المفتوحة: ' + ar(sites) + '</p>' : '') +
       '<h3>فروع الدولة</h3>' + branchRows +
       '<h3>الطبقات</h3><div class="classbar">' + order.map((id) => '<i style="flex:' + counts[id].n + ';background:' + CLASS_COLORS[id] + '"></i>').join('') + '</div><div class="legend">' + order.map((id) => '<span style="--c:' + CLASS_COLORS[id] + '">' + esc(counts[id].name) + ' ' + ar(counts[id].n) + '</span>').join('') + '</div>' +

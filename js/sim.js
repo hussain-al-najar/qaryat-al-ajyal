@@ -32,7 +32,7 @@
     return [
       [1, out('health'), 4], [2, out('supply'), 3], [3, out('security'), 4], [3, out('court'), 2], [4, out('education'), 3],
       [5, out('works'), 2], [0, out('finance'), 1.5], [0, out('bank'), 1.5], [6, out('hall'), 1],
-      [4, out('university'), 2], [0, out('airport'), 1.5], [0, out('central'), 1],
+      [4, out('university'), 2], [0, out('airport'), 1.5], [0, out('central'), 1], [0, out('mining'), 1.5],
       [0, tax, -3], [0, tax + 2, 3], [2, tax + 2, 2],
     ];
   })();
@@ -88,7 +88,7 @@
       };
     }
     function newLedger() {
-      return { dividends: 0, tax: 0, vat: 0, sales: 0, caravans: 0, other: 0, fees: 0, airport: 0, oil: 0, borrow: 0, debt: 0, salaries: 0, projects: 0, welfare: 0, imports: 0, pension: 0, loans: 0, interest: 0 };
+      return { dividends: 0, tax: 0, vat: 0, sales: 0, caravans: 0, other: 0, fees: 0, airport: 0, oil: 0, mining: 0, borrow: 0, debt: 0, salaries: 0, projects: 0, welfare: 0, imports: 0, pension: 0, loans: 0, interest: 0 };
     }
     function newCourt() {
       return { cases: [], next: 1, closed: 0, wrong: 0, warned: false };
@@ -107,6 +107,7 @@
       if (!s.pension) s.pension = newPension();
       if (!s.airport) s.airport = newAirport();
       oilState();
+      minesState();
       fundState();
       debtState();
       shuraState();
@@ -249,7 +250,12 @@
       p.x = interior.door.x;
       p.y = interior.door.y - 1;
       p.path = [];
-      const spot = pick(r, interior.spots);
+      // في الصالات الكبيرة كل موظف له مكانه، والمسافر يقعد عند البوابة
+      const a = interior.anchors || {};
+      let spot = null;
+      if (p.task && p.task.kind === 'work' && p.job && a.jobs && a.jobs[p.job.title]) { const l = a.jobs[p.job.title]; spot = l[(p.job.slot || 0) % l.length]; }
+      else if (p.task && p.task.kind === 'travel' && a.travel) spot = pick(r, a.travel);
+      spot = spot || pick(r, interior.spots);
       walkInterior(p, spot[0], spot[1]);
       emit('moved', { id: p.id });
     }
@@ -553,7 +559,13 @@
         const skip = !law('compedu') && stage >= 2 && poorHome && r() < 0.35;
         if (!skip && stage > 0 && stageOpen(stage) && (p.edu == null || p.edu === stage - 1)) return { kind: 'school', place: VQ.STAGES[stage].place, dur: (13 - h) * 60 };
       }
-      if (p.student && h >= 8 && h < 14) return { kind: 'school', place: 'university', dur: (14 - h) * 60 };
+      if (p.student && h >= 8 && h < 14) {
+        // طلبة الجيولوجيا يطلعون رحلة ميدانية للجبال يوم من كل ثلاث
+        if (p.major === 'geology' && branchLevel('mining') && world.places.frontier.tiles.length && (s.day + Number(String(p.id).slice(1))) % 3 === 0) {
+          return { kind: 'school', place: 'frontier', tile: publicSpot('frontier'), field: true, dur: (14 - h) * 60 };
+        }
+        return { kind: 'school', place: 'university', dur: (14 - h) * 60 };
+      }
 
       // الدوام
       if (p.job && h >= 7.5 && h < 16) return workTask(p, (16 - h) * 60);
@@ -693,8 +705,12 @@
         if (task) return task;
         return { kind: 'work', place: 'plaza', tile: publicSpot('plaza'), dur: minutes };
       }
+      // المستكشفين والجيولوجيين يطلعون للجبال أغلب الأيام، والرئيس يبقى في المكتب
+      if (p.job.place === 'mining' && p.job.title !== 'رئيس هيئة التعدين' && world.places.frontier.tiles.length && r() < 0.7) {
+        return { kind: 'work', place: 'frontier', tile: publicSpot('frontier'), dur: minutes };
+      }
       const task = { kind: 'work', place: p.job.place, dur: minutes };
-      if (p.job.place === 'farm') task.tile = publicSpot('farm');
+      if (p.job.place === 'farm' || VQ.MINE_IDS.includes(p.job.place)) task.tile = publicSpot(p.job.place);
       return task;
     }
 
@@ -731,7 +747,7 @@
     function makeBudget() {
       const f = s.gov.lastFin;
       if (!f) return;
-      const forecast = ['tax', 'vat', 'sales', 'caravans', 'other', 'fees', 'airport', 'oil'].reduce((a, k) => a + (f[k] || 0), 0);
+      const forecast = ['tax', 'vat', 'sales', 'caravans', 'other', 'fees', 'airport', 'oil', 'mining'].reduce((a, k) => a + (f[k] || 0), 0);
       const dueItems = debtState().items.filter((d) => d.due <= s.day + C.DAYS_PER_YEAR);
       const due = dueItems.reduce((a, d) => a + d.owed, 0);
       const duePrincipal = dueItems.reduce((a, d) => a + d.principal, 0); // سداد الأصل تمويل، مو مصروف
@@ -776,7 +792,7 @@
       return s.debt;
     }
     const debtTotal = () => debtState().items.reduce((a, d) => a + d.owed, 0);
-    const lastIncome = () => { const f = s.gov.lastFin; return f ? ['tax', 'vat', 'sales', 'caravans', 'other', 'fees', 'airport', 'oil'].reduce((a, k) => a + (f[k] || 0), 0) : 5000; };
+    const lastIncome = () => { const f = s.gov.lastFin; return f ? ['tax', 'vat', 'sales', 'caravans', 'other', 'fees', 'airport', 'oil', 'mining'].reduce((a, k) => a + (f[k] || 0), 0) : 5000; };
     function issueDebt(amount, years, why, backed) {
       const d = debtState();
       // سقف الدين: سنة ونص من الإيرادات، والقرض المضمون بالنفط يوصل لين مرتين ونص
@@ -1215,7 +1231,9 @@
           p.student = true;
           p.eligible[4] = 0;
           p.studied[4] = 0;
-          log('edu', p.name + (p.gender === 'f' ? ' انقبلت' : ' انقبل') + ' في الجامعة.', [p.id]);
+          // بعد ما تنبني هيئة التعدين، بعض الطلبة يتخصصون جيولوجيا وتعدين
+          p.major = branchLevel('mining') && r() < 0.4 ? 'geology' : null;
+          log('edu', p.name + (p.gender === 'f' ? ' انقبلت' : ' انقبل') + ' في الجامعة' + (p.major === 'geology' ? ' تخصص جيولوجيا وتعدين.' : '.'), [p.id]);
         }
       }
     }
@@ -1507,7 +1525,10 @@
         addTreasury(C.TOURIST_FEE, 'airport');
         // أكل وقهوة، تسوق من المحلات والبسطات، ومواصلات
         if (eat.length) s.biz[pick(r, eat)].till += cash * 0.35;
-        if (firms.length) { const f = pick(r, firms); f.tourist = (f.tourist || 0) + cash * 0.5; } else addTreasury(cash * 0.5, 'sales');
+        // محلات المطار والسوق الحرة تاخذ نصيبها قبل ما يطلع السايح للبلد
+        addTreasury(cash * C.AIRPORT_SHOPS, 'airport');
+        const out = 0.5 - C.AIRPORT_SHOPS;
+        if (firms.length) { const f = pick(r, firms); f.tourist = (f.tourist || 0) + cash * out; } else addTreasury(cash * out, 'sales');
         addTreasury(cash * 0.15, 'sales');
         spent += cash;
       }
@@ -1654,6 +1675,7 @@
       if (ok('exchange') && s.gov.era >= 2) return 'exchange';
       if (ok('central') && (cbState().inflation > 0.06 || cbState().reserves < 0 || s.gov.era >= 2)) return 'central';
       if (ok('airport') && s.gov.era >= 2) return 'airport';
+      if (ok('mining') && s.gov.era >= 1) return 'mining';
       return null;
     }
     function nextBranches() {
@@ -1736,7 +1758,7 @@
       }
       addTreasury(zakat, 'tax');
       const f0 = gov.fin;
-      const deficit = f0.salaries + f0.projects + f0.welfare + (f0.imports || 0) + (f0.pension || 0) + (f0.loans || 0) + (f0.interest || 0) + (f0.debt || 0) > f0.tax + (f0.vat || 0) + f0.sales + f0.caravans + f0.other + (f0.fees || 0) + (f0.airport || 0) + (f0.oil || 0);
+      const deficit = f0.salaries + f0.projects + f0.welfare + (f0.imports || 0) + (f0.pension || 0) + (f0.loans || 0) + (f0.interest || 0) + (f0.debt || 0) > f0.tax + (f0.vat || 0) + f0.sales + f0.caravans + f0.other + (f0.fees || 0) + (f0.airport || 0) + (f0.oil || 0) + (f0.mining || 0);
       // الخفض ممنوع مع العجز، وإذا الخزينة قريبة تخلص ما في خيار إلا الرفع
       // قاعدة مالية: ما في خفض إذا الخزينة أقل من رواتب سنة، وإذا قربت تخلص لازم رفع
       const yearPay = (f0.salaries || 0) + (gov.lastFin ? gov.lastFin.salaries : 0) * 0.5;
@@ -1771,7 +1793,7 @@
 
       // حولية السنة تنكتب في السجل
       const f = gov.fin;
-      const income = f.tax + (f.vat || 0) + f.sales + f.caravans + f.other + (f.fees || 0) + (f.airport || 0) + (f.oil || 0);
+      const income = f.tax + (f.vat || 0) + f.sales + f.caravans + f.other + (f.fees || 0) + (f.airport || 0) + (f.oil || 0) + (f.mining || 0);
       const spend = f.salaries + f.projects + f.welfare + (f.imports || 0) + (f.pension || 0) + (f.loans || 0) + (f.interest || 0) + (f.debt || 0) + (f.dividends || 0);
       const count = {};
       for (const p of adults) { const c = classOf(p).name; count[c] = (count[c] || 0) + 1; }
@@ -2197,6 +2219,162 @@
       oil.revenue = net;
       oil.yearRevenue += net;
     }
+    // ---- المناجم والاستكشاف ----
+    // الجبال الشرقية مقسومة قطع ٨×٨. كل قطعة تنكشف بنقاط استكشاف، ولما تنكشف قطعة فيها منجم ينلقى
+    const E = world.east;
+    const chunkIndex = (x, y) => (x < E.x0 ? -1 : Math.floor(y / E.chunk) * E.cols + Math.floor((x - E.x0) / E.chunk));
+    function minesState() {
+      if (!s.mines) {
+        const explored = new Array(E.cols * E.rows).fill(0);
+        // حول هيئة التعدين مكشوف من البداية
+        const hq = world.places.mining.front;
+        for (let cy = 0; cy < E.rows; cy++) for (let cx = 0; cx < E.cols; cx++) {
+          const mx = E.x0 + cx * E.chunk + E.chunk / 2;
+          const my = cy * E.chunk + E.chunk / 2;
+          if (Math.abs(mx - hq.x) <= 8 && Math.abs(my - hq.y) <= 8) explored[cy * E.cols + cx] = 1;
+        }
+        s.mines = {
+          explored,
+          points: 0,
+          field: 0,
+          revealed: explored.reduce((a, b) => a + b, 0),
+          sites: world.mineSites.map((m) => ({ id: m.id, mineral: m.mineral, found: false, open: false, building: 0, foundYear: 0, finder: '', output: 0, yearOutput: 0, lastOutput: 0, price: 1 })),
+          revenue: 0, yearRevenue: 0, lastRevenue: 0,
+        };
+      }
+      if (!world.places.frontier.tiles.length) refreshFrontier();
+      return s.mines;
+    }
+    const mineSite = (id) => minesState().sites.find((m) => m.id === id);
+    const isExplored = (x, y) => { const i = chunkIndex(x, y); return i < 0 || !!(s.mines && s.mines.explored[i]); };
+    // القطع اللي ممكن تنكشف الحين: مجاورة لقطعة مكشوفة
+    function frontierChunks() {
+      const ex = s.mines.explored;
+      const out = [];
+      for (let cy = 0; cy < E.rows; cy++) for (let cx = 0; cx < E.cols; cx++) {
+        if (ex[cy * E.cols + cx]) continue;
+        const near = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const nx = cx + dx; const ny = cy + dy; return nx >= 0 && ny >= 0 && nx < E.cols && ny < E.rows && ex[ny * E.cols + nx]; });
+        if (near) out.push([cx, cy]);
+      }
+      return out;
+    }
+    // المستكشفين يوقفون على حافة المكشوف ويطالعون اللي وراه
+    function refreshFrontier() {
+      const tiles = [];
+      const ex = s.mines ? s.mines.explored : null;
+      if (!ex) return;
+      for (const [cx, cy] of frontierChunks()) {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= E.cols || ny >= E.rows || !ex[ny * E.cols + nx]) continue;
+          // أقرب مربع يمشى فيه داخل القطعة المكشوفة، على الحد
+          const x0 = E.x0 + nx * E.chunk;
+          const y0 = ny * E.chunk;
+          for (let k = 0; k < 12; k++) {
+            const x = x0 + Math.floor(r() * E.chunk);
+            const y = y0 + Math.floor(r() * E.chunk);
+            if (x < world.W && y < world.H && !world.solid[y * world.W + x]) { tiles.push([x, y]); break; }
+          }
+        }
+      }
+      world.places.frontier.tiles = tiles;
+    }
+    function revealChunk(cx, cy) {
+      const st = s.mines;
+      st.explored[cy * E.cols + cx] = 1;
+      st.revealed++;
+      for (const m of world.mineSites) {
+        const site = st.sites.find((x) => x.id === m.id);
+        if (site.found || chunkIndex(m.ex, m.ey) !== cy * E.cols + cx) continue;
+        site.found = true;
+        site.foundYear = yearOf();
+        const crew = alive().filter((p) => (p.job && p.job.place === 'mining') || p.fieldDay === s.day);
+        const finder = crew.length ? pick(r, crew) : null;
+        site.finder = finder ? finder.name : '';
+        const min = VQ.MINERALS[m.mineral];
+        log('state', (finder ? finder.name + (finder.gender === 'f' ? ' لقت ' : ' لقى ') : 'المستكشفين لقوا ') + 'عروق ' + min.name + ' في الجبال الشرقية! صار اسمه «' + m.place + '».', finder ? [finder.id] : []);
+        emit('mine', { id: m.id, mineral: m.mineral });
+      }
+    }
+    function minesDay(newYear) {
+      const st = minesState();
+      if (newYear) {
+        st.lastRevenue = st.yearRevenue; st.yearRevenue = 0;
+        for (const m of st.sites) { m.lastOutput = m.yearOutput; m.yearOutput = 0; }
+      }
+      const lvl = branchLevel('mining');
+      if (!lvl) { st.field = 0; return; }
+      // نقاط الاستكشاف: الجيولوجي أكثر من المستكشف، وطلبة الجيولوجيا يساعدون في رحلاتهم الميدانية
+      const staff = alive().filter((p) => p.job && p.job.place === 'mining');
+      let pts = st.field * 1.5;
+      for (const p of staff) pts += p.job.title === 'جيولوجي' ? 3 : p.job.title === 'مستكشف' ? 2 : 1;
+      st.points += pts * (0.7 + 0.3 * lvl);
+      st.field = 0;
+      let changed = false;
+      while (st.points >= C.EXPLORE_COST) {
+        const options = frontierChunks();
+        if (!options.length) { st.points = 0; break; }
+        // الطرق الترابية تسهّل الوصول، فالقطع اللي فيها طريق تنكشف أول
+        const weight = ([cx, cy]) => {
+          let w = 1;
+          for (let y = cy * E.chunk; y < Math.min(world.H, (cy + 1) * E.chunk); y += 2) for (let x = E.x0 + cx * E.chunk; x < Math.min(world.W, E.x0 + (cx + 1) * E.chunk); x += 2) if (world.ground[y * world.W + x] === VQ.T.DIRT) { w = 4; break; }
+          return w;
+        };
+        const ws = options.map(weight);
+        let roll = r() * ws.reduce((a, b) => a + b, 0);
+        let k = 0;
+        while (roll > ws[k] && k < ws.length - 1) { roll -= ws[k]; k++; }
+        revealChunk(options[k][0], options[k][1]);
+        st.points -= C.EXPLORE_COST;
+        changed = true;
+      }
+      if (changed) refreshFrontier();
+      if (changed && st.revealed === E.cols * E.rows) log('state', 'خلص استكشاف الجبال الشرقية كلها.', []);
+      // بعد ما ينكشف كل شي، المستكشفين ما لهم شغل: ينهى عقدهم ويدورون شغل ثاني
+      if (st.revealed === E.cols * E.rows) {
+        for (const p of staff) if (p.job.title === 'مستكشف') { log('job', p.name + (p.gender === 'f' ? ' خلّصت' : ' خلّص') + ' شغله مستكشف بعد ما انكشفت الجبال كلها.', [p.id]); p.job = null; }
+      }
+      // تجهيز المنجم المكتشف: الدولة تدفع، وبعد كم يوم يبدأ الإنتاج
+      for (const m of st.sites) {
+        if (!m.found || m.open) continue;
+        const def = world.mineSites.find((x) => x.id === m.id);
+        if (!m.building) {
+          const cost = C.MINE_OPEN_COST * P();
+          if (s.treasury < cost + C.BUILD_RESERVE) continue;
+          spendTreasury(cost, 'projects');
+          m.building = s.day;
+          log('state', 'الدولة بدأت تجهّز ' + def.place + ': طريق وسكة وعربات.', []);
+        } else if (s.day - m.building >= C.MINE_BUILD_DAYS) {
+          m.open = true;
+          log('state', 'انفتح ' + def.place + ' وبدأ الإنتاج. يبغون مهندس تعدين وعمال.', []);
+          emit('built', { branch: 'mining', mine: m.id });
+        }
+      }
+      // الإنتاج: كل منجم حسب طاقمه، والسعر يتحرك شوي كل يوم
+      let total = 0;
+      for (const m of st.sites) {
+        if (!m.open) { m.output = 0; continue; }
+        m.price = clamp(m.price + (1 - m.price) * 0.1 + 0.08 * (r() + r() - 1), 0.5, 1.8);
+        const crew = alive().filter((p) => p.job && p.job.place === m.id);
+        const engineer = crew.some((p) => p.job.title === 'مهندس تعدين');
+        const staffed = crew.length / VQ.MINE_JOBS.length;
+        const work = crew.length ? (engineer ? 0.35 + 0.65 * staffed : 0.3 * staffed) : 0;
+        const gross = VQ.MINERALS[m.mineral].value * work * m.price * (1 + 0.25 * (lvl - 1)) * P();
+        m.output = gross;
+        m.yearOutput += gross;
+        total += gross;
+      }
+      if (total > 0) {
+        const net = total * C.MINE_SHARE;
+        addTreasury(net, 'mining');
+        cbState().flowIn += total;
+        cbState().flowOut += total - net; // تشغيل ونقل وتصدير
+        st.revenue = net;
+        st.yearRevenue += net;
+        s.pollution = (s.pollution || 0) * (branchLevel('oil') ? 1 : 0.9) + total / 9000;
+      } else st.revenue = 0;
+    }
     function fundState() {
       if (!s.fund) s.fund = { balance: 0, inYear: 0, outYear: 0, lastIn: 0, lastOut: 0 };
       return s.fund;
@@ -2271,6 +2449,15 @@
 
     function onArrive(p, t) {
       t.arrived = true;
+      if (t.field && p.fieldDay !== s.day) {
+        // الرحلة الميدانية تنحسب حضور جامعة، وتساعد في الاستكشاف
+        p.fieldDay = s.day;
+        p.schoolDay = s.day;
+        p.studied = p.studied || {};
+        p.studied[4] = (p.studied[4] || 0) + 1;
+        minesState().field++;
+        emote(p, 'pick', 120);
+      }
       if (t.kind === 'school' && p.schoolDay !== s.day) {
         p.schoolDay = s.day;
         const stage = VQ.STAGES.findIndex((st) => st && st.place === t.place);
@@ -2778,12 +2965,13 @@
 
     // ---- بداية اليوم ----
     function placeLevel(place) {
+      if (VQ.MINE_IDS.includes(place)) { const m = mineSite(place); return m && m.open ? 1 : 0; }
       const stage = VQ.STAGES.find((st) => st && st.place === place && st.place !== 'university');
       if (stage && place !== 'school') return stageOpen(VQ.STAGES.indexOf(stage)) ? 1 : 0;
       const id = VQ.BRANCH_IDS.find((b) => VQ.BRANCHES[b].place === place);
       return id ? branchLevel(id) : 1;
     }
-    const ESSENTIAL = ['exchange', 'central', 'oil', 'clinic', 'school', 'school2', 'school3', 'university', 'airport', 'security', 'court', 'farm'];
+    const ESSENTIAL = ['mining'].concat(VQ.MINE_IDS, ['exchange', 'central', 'oil', 'clinic', 'school', 'school2', 'school3', 'university', 'airport', 'security', 'court', 'farm']);
     function assignJobs() {
       const taken = {};
       for (const p of alive()) if (p.job) taken[p.job.place + ':' + p.job.slot] = true;
@@ -2797,6 +2985,7 @@
           // تجميد التوظيف: الدولة توقف الوظايف الإدارية لما تكون في عجز، والخدمات الأساسية تبقى
           const frozen = s.gov.freeze && !ESSENTIAL.includes(place) && !(s.biz[place] && s.biz[place].owner);
           VQ.JOBS[place].forEach((job, slot) => {
+            if (place === 'mining' && job.title === 'مستكشف' && s.mines && s.mines.revealed >= s.mines.explored.length) return;
             if (frozen || job.appoint || taken[place + ':' + slot] || (job.lvl || 1) > level || (job.minSkill || 0) > skill) return;
             // شروط التوظيف: العمر والشهادة
             if (age < (job.minAge || C.ADULT_AGE) || edu < needEdu(job.edu)) return;
@@ -3013,7 +3202,7 @@
         }
       }
       // الاستقدام: الوظيفة المهمة اللي ما لقت مواطن مؤهل، الدولة تجيب لها خبير من برا
-      const KEY = [['exchange', 2], ['exchange', 1], ['central', 0], ['oil', 0], ['court', 0], ['clinic', 0], ['school', 0], ['school2', 0], ['school3', 0], ['university', 0], ['airport', 1], ['airport', 0]];
+      const KEY = [['exchange', 2], ['exchange', 1], ['central', 0], ['oil', 0], ['court', 0], ['clinic', 0], ['school', 0], ['school2', 0], ['school3', 0], ['university', 0], ['airport', 1], ['airport', 0], ['mining', 1]];
       for (const [place, slot] of KEY) {
         const job = VQ.JOBS[place][slot];
         if (!job || placeLevel(place) < (job.lvl || 1)) continue;
@@ -3127,6 +3316,7 @@
       settleBusinesses();
       bankDay();
       oilDay(newYear);
+      minesDay(newYear);
       debtDay();
       if (newYear) cbYear();
       if (alive().length) fundDay(newYear);
@@ -3187,6 +3377,8 @@
       worthOf,
       activeSites,
       branchLevel,
+      isExplored: (x, y) => isExplored(x, y),
+      mineSite: (id) => mineSite(id),
       taxRate,
       totalLevels,
       priceOf,
