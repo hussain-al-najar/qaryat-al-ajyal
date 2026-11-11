@@ -1,0 +1,11 @@
+{
+  "name": "qaryat-al-ajyal",
+  "version": "1.0.0",
+  "description": "قرية الأجيال — لعبة محاكاة قرية خليجية ١٦-بت بأجيال وخلايا عصبية ودولة واقتصاد",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "node test/sim.test.js",
+    "start": "python -m http.server 8000"
+  }
+}

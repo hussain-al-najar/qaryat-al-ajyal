@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="قرية الأجيال — لعبة محاكاة قرية خليجية ١٦-بت بأجيال وخلايا عصبية ودولة واقتصاد">
+<title>قرية الأجيال</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Handjet:wght@500;700&family=Noto+Kufi+Arabic:wght@400;600;700&display=swap">
+<style>
+  /* نافذة أرب جي قديمة: أزرق غامق بحد كريمي فوق عالم رملي دافئ. */
+  :root {
+    color-scheme: dark;
+    --night: #121533;
+    --win: #1d2a78;
+    --win2: #121a52;
+    --line: #fbeed0;
+    --ink: #0a0c24;
+    --cream: #fbeed0;
+    --muted: #b9c0e8;
+    --gold: #f4c95d;
+    --teal: #58d0bc;
+    --red: #ef7c6c;
+    --blue: #6cc4e4;
+    --display: 'Handjet', 'Noto Kufi Arabic', 'Segoe UI', Tahoma, sans-serif;
+    --body: 'Noto Kufi Arabic', 'Segoe UI', Tahoma, sans-serif;
+  }
+  [hidden] { display: none !important; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: var(--night); color: var(--cream); font-family: var(--body); }
+  #game { position: fixed; inset: 0; image-rendering: pixelated; image-rendering: crisp-edges; image-rendering: pixelated; touch-action: none; cursor: pointer; }
+
+  .win {
+    background: linear-gradient(180deg, var(--win), var(--win2));
+    border: 3px solid var(--line);
+    box-shadow: 0 0 0 3px var(--ink), 5px 6px 0 3px rgba(10, 12, 36, .45);
+  }
+  button {
+    font: inherit; color: inherit; background: rgba(255, 255, 255, .08); border: 2px solid var(--muted);
+    padding: 4px 10px; cursor: pointer; min-height: 34px;
+  }
+  button:hover { background: rgba(255, 255, 255, .18); }
+  button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  button[aria-pressed="true"], button[aria-selected="true"] { background: var(--gold); color: var(--ink); border-color: var(--gold); font-weight: 700; }
+
+  #hud {
+    position: fixed; top: 0; inset-inline: 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; justify-content: space-between;
+    padding: max(12px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
+    pointer-events: none;
+  }
+  #hud > * { pointer-events: auto; }
+  #status { padding: 6px 14px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+  #clock { font-family: var(--display); font-size: 28px; line-height: 1; font-weight: 700; color: var(--gold); }
+  #date, #pop, #gen, #where { font-size: 13px; }
+  #where { font-weight: 700; color: var(--teal); }
+  #pop { color: var(--cream); }
+  #gen:empty { display: none; }
+  #controls { display: flex; gap: 8px; padding: 6px 8px; align-items: center; }
+  #controls .lbl { font-size: 12px; color: var(--muted); }
+  .speed { min-width: 44px; font-size: 13px; }
+  #life { font-size: 13px; color: var(--muted); }
+  #life b { color: var(--cream); font-weight: 600; }
+  #life .sick { color: var(--red); }
+  #resetBtn { border-color: var(--red); color: var(--red); font-size: 13px; white-space: nowrap; }
+  #resetBtn.armed { background: var(--red); color: var(--ink); font-weight: 700; }
+
+  #toasts { position: fixed; bottom: 66px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; width: min(460px, calc(100vw - 32px)); pointer-events: none; }
+  .toast { padding: 5px 14px; font-size: 13.5px; line-height: 1.5; text-align: center; border-color: var(--gold); }
+  .toast.t-death { border-color: var(--red); }
+  .toast.t-marriage { border-color: #f08aa4; }
+  .toast.t-birth { border-color: var(--teal); }
+  .toast.t-outbreak { border-color: var(--red); color: var(--red); }
+
+  #panel {
+    position: fixed; inset-inline-end: max(16px, env(safe-area-inset-left, 0px)); top: 78px; bottom: 16px; width: min(372px, calc(100vw - 32px));
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  /* اللوحة في جهة البداية مع RTL تكون يمين */
+  #panelHead { display: flex; gap: 6px; padding: 8px; align-items: center; border-bottom: 2px solid rgba(251, 238, 208, .35); }
+  #panelHead [data-tab] { flex: 1; font-size: 12px; padding-inline: 2px; min-width: 0; }
+  #panelClose { min-width: 34px; padding: 0; }
+  #panelBody { overflow-y: auto; padding: 10px 12px 16px; flex: 1; min-height: 0; font-size: 13.5px; line-height: 1.7; }
+  #panelBody h3 { font-family: var(--display); font-size: 23px; line-height: 1.1; font-weight: 700; color: var(--gold); margin: 14px 0 6px; }
+  #minimap { width: 100%; height: auto; display: block; border: 2px solid var(--line); background: var(--ink); image-rendering: pixelated; }
+  .placegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .placegrid button { font-size: 13px; display: flex; justify-content: space-between; gap: 6px; align-items: center; text-align: start; min-width: 0; }
+  .placegrid.houses { grid-template-columns: repeat(4, 1fr); }
+  .placegrid.houses button { padding-inline: 4px; justify-content: center; font-size: 12px; }
+  .placegrid .lived { border-color: var(--gold); color: var(--gold); }
+  .note { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; }
+  .meta { margin: 6px 0 10px; font-size: 13px; color: var(--muted); }
+  .empty { padding: 10px 2px; }
+  .empty p { margin: 0 0 12px; }
+  .big { font-family: var(--display); font-size: 30px; line-height: 1.15; font-weight: 700; color: var(--gold); margin: 0 0 8px; }
+  .wide { width: 100%; font-weight: 700; background: var(--teal); color: var(--ink); border-color: var(--teal); padding-block: 8px; }
+  .wide:hover { background: #7ae0ce; }
+  .wide.danger { background: transparent; color: var(--red); border-color: var(--red); }
+  .restart { margin-top: 14px; }
+  .plist { display: flex; flex-direction: column; gap: 6px; }
+  .person { display: flex; flex-direction: column; align-items: flex-start; text-align: start; gap: 0; padding: 6px 10px; }
+  .person small { color: var(--muted); font-weight: 400; }
+  .person span { font-size: 12px; color: var(--muted); }
+  .back { font-size: 12px; margin-bottom: 4px; }
+  .need { display: grid; grid-template-columns: 52px 1fr; gap: 8px; align-items: center; font-size: 12px; margin-bottom: 5px; }
+  .need i { display: block; height: 10px; background: var(--ink); border: 2px solid var(--muted); }
+  .need em { display: block; height: 100%; background: var(--cream); }
+  .need em.w { background: var(--blue); }
+  .need em.f { background: var(--gold); }
+  .need em.u { background: var(--teal); }
+  .need em.h { background: #8ee08a; }
+  .need em.low { background: var(--red); }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; font-size: 12px; color: var(--muted); }
+  .stats b { display: block; font-family: var(--display); font-size: 28px; line-height: 1.1; color: var(--gold); font-variant-numeric: tabular-nums; }
+  .log { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .log li { padding-inline-start: 10px; border-inline-start: 3px solid var(--muted); font-size: 13px; line-height: 1.55; }
+  .log small { display: block; font-size: 11px; color: var(--muted); }
+  .log .t-marriage { border-color: #f08aa4; }
+  .log .t-birth { border-color: var(--teal); }
+  .log .t-death { border-color: var(--red); }
+  .log .t-shop { border-color: var(--gold); }
+  .log .t-sick, .log .t-outbreak { border-color: #e0a53c; }
+  .logtoggle { width: 100%; font-size: 12.5px; margin-top: 8px; }
+  .family { display: flex; flex-direction: column; align-items: stretch; text-align: start; gap: 2px; padding: 6px 10px; }
+  .family span { font-size: 12px; color: var(--muted); }
+  .family .stock { display: flex; gap: 12px; color: var(--cream); font-variant-numeric: tabular-nums; }
+  .family .low { color: var(--red); font-weight: 700; }
+  .illness { color: var(--red); font-weight: 700; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .chips button { font-size: 12px; min-height: 30px; padding: 2px 8px; }
+  #netCanvas { width: 100%; height: auto; display: block; background: var(--ink); border: 2px solid var(--muted); image-rendering: pixelated; margin: 4px 0 8px; }
+  .row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 3px 0; border-bottom: 1px solid rgba(251, 238, 208, .18); }
+  .row b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .row small { color: var(--muted); }
+  .pips { color: var(--gold); letter-spacing: 2px; white-space: nowrap; }
+  .ruler { border: 2px solid var(--gold); padding: 8px 10px; margin-bottom: 8px; }
+  .ruler b { color: var(--gold); font-size: 15px; display: block; }
+  .progress { height: 10px; background: var(--ink); border: 2px solid var(--muted); margin: 4px 0 8px; }
+  .progress i { display: block; height: 100%; background: var(--gold); }
+  .classbar { display: flex; height: 16px; border: 2px solid var(--muted); margin: 4px 0; }
+  .classbar i { display: block; height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+  .legend span::before { content: ''; display: inline-block; width: 9px; height: 9px; background: var(--c); margin-inline-end: 4px; }
+
+  #banner {
+    position: fixed; top: 84px; left: 50%; transform: translateX(-50%); padding: 6px 22px 8px; text-align: center; pointer-events: none; max-width: calc(100vw - 32px);
+  }
+  #banner b { display: block; font-family: var(--display); font-size: 30px; line-height: 1.1; color: var(--gold); }
+  #banner span { font-size: 12.5px; color: var(--cream); }
+  #banner span:empty { display: none; }
+  #hint { position: fixed; bottom: max(20px, env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); font-weight: 700; padding: 6px 16px; white-space: nowrap; }
+  #intro {
+    position: fixed; bottom: max(20px, env(safe-area-inset-bottom, 0px)); inset-inline-start: max(16px, env(safe-area-inset-left, 0px)); max-width: min(430px, calc(100vw - 32px)); padding: 10px 14px; cursor: pointer; font-size: 13.5px; line-height: 1.75;
+  }
+  #intro b { color: var(--gold); font-family: var(--display); font-size: 26px; display: block; line-height: 1.1; margin-bottom: 4px; }
+  #modal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10, 12, 36, .55); padding: 16px; }
+  #modal[hidden] { display: none; }
+  #modalCard { width: min(420px, 100%); max-height: 85%; overflow-y: auto; padding: 14px 16px; }
+  #modalTop { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  #modalTitle { margin: 0; font-family: var(--display); font-size: 32px; line-height: 1.1; color: var(--gold); }
+  #modalBody { font-size: 14px; line-height: 1.7; }
+  .goods { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .goods td { padding: 7px 0; border-bottom: 1px solid rgba(251, 238, 208, .25); }
+  .goods small { display: block; font-size: 12px; color: var(--muted); }
+  .goods .price { text-align: end; white-space: nowrap; color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 720px) {
+    #controls .lbl { display: none; }
+    #status { gap: 8px; padding: 4px 10px; }
+    #clock { font-size: 24px; }
+    #date, #gen, #life { font-size: 11px; }
+    #toasts { bottom: 60px; }
+    #panel { top: auto; height: 68%; bottom: 12px; }
+    #banner { top: 112px; }
+    .speed { min-width: 36px; padding-inline: 4px; }
+  }
+</style>
+</head>
+<body>
+
+<div dir="rtl" lang="ar">
+  <canvas id="game" aria-label="خريطة القرية. استخدم الأسهم للمشي"></canvas>
+
+  <div id="hud">
+    <div id="status" class="win">
+      <span id="clock">٧:٣٠ ص</span>
+      <span id="date"></span>
+      <span id="where">القرية</span>
+      <span id="pop"></span>
+      <span id="gen"></span>
+      <span id="life"></span>
+    </div>
+    <div id="controls" class="win">
+      <span class="lbl">السرعة</span>
+      <button id="speed1" class="speed" aria-pressed="true">×١</button>
+      <button id="speed10" class="speed" aria-pressed="false">×١٠</button>
+      <button id="speed60" class="speed" aria-pressed="false">×٦٠</button>
+      <button id="panelBtn" aria-expanded="false" aria-controls="panel">دفتر القرية</button>
+      <button id="resetBtn">ريست</button>
+    </div>
+  </div>
+
+  <aside id="panel" class="win" hidden>
+    <div id="panelHead">
+      <button data-tab="places" aria-selected="true">الأماكن</button>
+      <button data-tab="people" aria-selected="false">السكان</button>
+      <button data-tab="families" aria-selected="false">العوايل</button>
+      <button data-tab="gov" aria-selected="false">الدولة</button>
+      <button data-tab="treasury" aria-selected="false">الخزينة</button>
+      <button data-tab="log" aria-selected="false">الأحداث</button>
+      <button id="panelClose" aria-label="إغلاق الدفتر">✕</button>
+    </div>
+    <div id="panelBody"></div>
+  </aside>
+
+  <div id="banner" class="win" hidden><b></b><span></span></div>
+  <button id="hint" class="win" hidden></button>
+  <div id="toasts" aria-live="polite"></div>
+
+  <div id="intro" class="win">
+    <b>قرية الأجيال</b>
+    كل واحد له خلايا عصبية تقرر عنه، وعندكم حاكم وخزينة وفروع دولة تنبني مع الوقت. تابعهم من «دفتر القرية».<br>
+    امشِ بالأسهم أو WASD، أو اضغط على أي مكان. للركض اضغط Shift، وللتفاعل اضغط زر E. ادخل أي بيت من بابه.
+  </div>
+
+  <div id="modal" hidden>
+    <div id="modalCard" class="win" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div id="modalTop"><h2 id="modalTitle"></h2><button id="modalClose" aria-label="إغلاق">✕</button></div>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/world.js"></script>
+<script src="js/brain.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/art.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
+
+</body></html>
